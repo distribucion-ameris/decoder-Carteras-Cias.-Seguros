@@ -489,7 +489,12 @@
     position: relative;
     overflow: hidden;
     transition: box-shadow .2s, transform .2s;
+    display: flex;
+    flex-direction: column;
+    min-height: 100px;
   }
+  /* Empuja sublabel al fondo: cards con sublabel corto / largo quedan alineadas */
+  .kpi .sublabel { margin-top: auto; padding-top: 4px; }
   .kpi::before {
     content: '';
     position: absolute;
@@ -521,7 +526,7 @@
   .kpi .sublabel {
     font-size: 11.5px;
     color: var(--c-muted);
-    margin-top: 6px;
+    line-height: 1.35;
   }
   /* Cards — Ameris deck style: floating header pill + clean white body */
   .card {
@@ -2825,7 +2830,7 @@ function renderGeneral() {
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Resumen general.</strong> Vista consolidada de las cuotas de fondos de inversión (CFI) que mantienen las compañías de seguros cargadas, sumando posiciones locales (B.2) y administradas por AGFs chilenas con activos en el extranjero (B.5 cuotas). Si manejas varios meses, puedes filtrar por período o por AGF.
+      <strong>Resumen general</strong> · Cuotas de fondos de inversión (CFI) consolidadas: B.2 local + B.5 cuotas administradas por AGFs chilenas. Filtra por período o AGF en la barra superior.
     </div>
     ${kpis}
     <div class="grid-2">
@@ -2949,8 +2954,7 @@ function renderAGF() {
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Por AGF.</strong> Lista de Administradoras Generales de Fondos con cuotas en cartera de las compañías de seguros cargadas. Suma cuotas locales (B.2) y administradas por AGFs chilenas con activos en el extranjero (B.5 cuotas), ordenado por Val. Libro total.
-      Haz clic en <strong>"Ver desglose"</strong> para ver el detalle por fondo y por compañía cliente. Las filas con tinte azul corresponden a Ameris.
+      <strong>Por AGF</strong> · Ranking de administradoras por Val. Libro total. Click en <strong>"Ver desglose"</strong> para ver fondos y compañías cliente. Filas con tinte azul = Ameris.
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">${list.length} AGFs con presencia en CFI</div></div>
@@ -3146,7 +3150,7 @@ function renderInsurer() {
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Por Compañía de Seguros.</strong> Cada tarjeta es una aseguradora — haz click para expandir y ver su cartera de cuotas (B.2 + B.5 administradas por AGFs chilenas). Dentro puedes alternar entre vista <em>por categoría</em> y <em>por AGF</em>, y filtrar por administradora específica.
+      <strong>Por Compañía de Seguros</strong> · Click en una tarjeta para ver su cartera completa. Dentro puedes alternar <em>por categoría</em> ↔ <em>por AGF</em>, y filtrar por administradora.
     </div>
     <div class="insurer-toolbar">
       <input type="search" id="insurer-search" placeholder="🔍 Buscar compañía por nombre o RUT…" value="${escapeHtml(INSURER_SEARCH)}">
@@ -3941,20 +3945,13 @@ function renderExtranjero() {
 
   container.innerHTML = `
     <div class="notice" style="background:#f5f3ff;border-color:#c4b5fd">
-      <strong>Inversión en el Extranjero (Archivo B.5).</strong>
-      Datos al cierre informado a la CMF según Circular N° 152. Incluye deuda extranjera
-      (bonos soberanos, bancarios y corporativos), cuotas de fondos extranjeros y acciones
-      de corporaciones extranjeras. Los montos se expresan en pesos chilenos al tipo de
-      cambio de cierre del último día hábil del mes.
+      <strong>Inversión en el Extranjero (B.5)</strong> · Bonos extranjeros + cuotas de fondos internacionales + acciones extranjeras. Montos en pesos chilenos al tipo de cambio de cierre.
     </div>
     ${kpis}
 
     <div class="grid-2" style="align-items:start">
       <div class="card">
-        <div class="card-header"><div class="card-title">Distribución por categoría de instrumento</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 4px">
-          Cómo se reparte la inversión total extranjera entre los distintos tipos de instrumentos (bonos soberanos, fondos inmobiliarios, fondos mutuos, etc.).
-        </div>
+        <div class="card-header"><div class="card-title">Por categoría</div></div>
         <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
           <table>
             <thead><tr><th>Categoría</th><th class="num">N°</th><th class="num">Val. Final</th><th class="num">%</th></tr></thead>
@@ -3963,10 +3960,7 @@ function renderExtranjero() {
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><div class="card-title">Distribución por país (top 15)</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 4px">
-          Países donde están registrados los emisores o donde están constituidos los fondos. Permite dimensionar la exposición geográfica del sistema.
-        </div>
+        <div class="card-header"><div class="card-title">Por país (top 15)</div></div>
         <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
           <table>
             <thead><tr><th>País</th><th class="num">N°</th><th class="num">Val. Final</th><th class="num">%</th></tr></thead>
@@ -3977,10 +3971,7 @@ function renderExtranjero() {
     </div>
 
     <div class="card">
-      <div class="card-header"><div class="card-title">Distribución por moneda de emisión</div></div>
-      <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 4px">
-        Moneda en que está expresado cada instrumento. Útil para entender la exposición cambiaria. <code>PROM</code> = peso reajustable / promedio (la mayor parte de los fondos chilenos con activos en el extranjero reportan en esta moneda).
-      </div>
+      <div class="card-header"><div class="card-title">Por moneda de emisión</div></div>
       <div class="table-wrap" style="max-height:40vh;overflow-y:auto">
         <table>
           <thead><tr><th>Moneda</th><th class="num">N°</th><th class="num">Val. Final</th><th class="num">%</th></tr></thead>
@@ -4447,6 +4438,21 @@ function renderPulsoAmeris() {
     });
   }
 
+  // Donut composición por cliente (top 8 aseguradoras + "Otros")
+  const top8Clients = clientList.slice(0, 8);
+  const otherClients = clientList.slice(8);
+  const clientsDonutItems = top8Clients.map(c => ({
+    label: c.name,
+    value: c.valor,
+  }));
+  if (otherClients.length > 0) {
+    clientsDonutItems.push({
+      label: `Otros ${otherClients.length} clientes`,
+      value: otherClients.reduce((s, c) => s + c.valor, 0),
+      color: '#94a3b8',
+    });
+  }
+
   const growthCard = growthMoM !== null
     ? `<div class="kpi"><div class="label">Variación vs ${fmtPeriod(prevP)}</div><div class="value" style="color:${growthMoMAbs >= 0 ? '#047857' : '#b91c1c'}">${growthMoMAbs >= 0 ? '+' : ''}${growthMoM.toFixed(2)}%</div><div class="sublabel">${growthMoMAbs >= 0 ? '+' : ''}${fmtMoney(growthMoMAbs)}</div></div>`
     : `<div class="kpi"><div class="label">Variación temporal</div><div class="value" style="color:var(--c-muted);font-size:18px">—</div><div class="sublabel">Carga otro período para comparar</div></div>`;
@@ -4525,9 +4531,7 @@ function renderPulsoAmeris() {
 
   container.innerHTML = `
     <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
-      <strong style="color:var(--c-ameris-navy)">Pulso Ameris AGF.</strong>
-      Vista 360° de la posición de Ameris en el sistema asegurador chileno, basada en los archivos B.2 cargados.
-      Datos al cierre de <strong>${fmtPeriod(lastP)}</strong> (${allCFI.length} posiciones CFI agregadas en el sistema, ${totalInsurersInSys} compañías).
+      <strong style="color:var(--c-ameris-navy)">Pulso Ameris AGF</strong> · Cierre <strong>${fmtPeriod(lastP)}</strong> · ${totalInsurersInSys} compañías de seguros · ${allCFI.length} posiciones CFI en el sistema.
     </div>
 
     <!-- KPI Row 1: AUM, Ranking, Market Share, Growth -->
@@ -4576,63 +4580,53 @@ function renderPulsoAmeris() {
 
     <!-- Bar chart: Top AGFs comparison -->
     <div class="card">
-      <div class="card-header"><div class="card-title">Top 10 AGFs en el sistema asegurador (CFI · ${fmtPeriod(lastP)})</div></div>
-      <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 12px">
-        Ranking de AGFs/emisores por AUM en CFI mantenido por compañías de seguros chilenas. Ameris destacada en gradiente cyan→azul. Si Ameris no está en el top 10, aparece al final con su posición real.
-      </div>
-      <div style="overflow-x:auto;padding:8px 0">
+      <div class="card-header"><div class="card-title">Top 10 AGFs en el sistema asegurador · ${fmtPeriod(lastP)}</div></div>
+      <div style="overflow-x:auto;padding:14px 0 8px">
         ${renderHorizontalBarChart(barChartItems, { labelWidth: 220 })}
       </div>
     </div>
 
+    <!-- Composición: por fondo + por cliente (los dos donuts en línea) -->
     <div class="grid-2" style="align-items:start">
-      <!-- Donut: Composición de Ameris por fondo -->
       <div class="card">
-        <div class="card-header"><div class="card-title">Composición Ameris por fondo</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 12px">
-          Cómo se reparte el AUM total Ameris entre los fondos administrados. Top 8 + "Otros" para los menores.
-        </div>
-        <div style="padding:8px">
+        <div class="card-header"><div class="card-title">Composición por fondo</div></div>
+        <div style="padding:14px 8px 8px">
           ${renderDonutChart(donutItems, { size: 200 })}
         </div>
       </div>
-
-      <!-- Evolución temporal -->
       <div class="card">
-        <div class="card-header"><div class="card-title">Evolución AUM Ameris</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 12px">
-          Serie mensual del AUM total Ameris en el sistema asegurador, todos los períodos cargados.
+        <div class="card-header"><div class="card-title">Composición por cliente</div></div>
+        <div style="padding:14px 8px 8px">
+          ${renderDonutChart(clientsDonutItems, { size: 200 })}
         </div>
-        ${allP.length >= 2
-          ? `<div style="padding:8px">${renderLineChart(allP, periodSeries, { tooltip: 'AUM Ameris' })}</div>`
-          : `<div style="text-align:center;padding:30px;color:var(--c-muted);font-size:12.5px">Carga al menos 2 períodos para ver la evolución temporal.</div>`
-        }
       </div>
+    </div>
+
+    <!-- Evolución temporal (full-width) -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">Evolución AUM Ameris</div></div>
+      ${allP.length >= 2
+        ? `<div style="padding:14px 8px 8px">${renderLineChart(allP, periodSeries, { tooltip: 'AUM Ameris' })}</div>`
+        : `<div style="text-align:center;padding:30px;color:var(--c-muted);font-size:12.5px">Carga al menos 2 períodos para ver la evolución temporal.</div>`
+      }
     </div>
 
     <!-- Top fondos + Top clientes -->
     <div class="grid-2" style="align-items:start">
       <div class="card">
-        <div class="card-header"><div class="card-title">Top fondos Ameris por AUM</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 4px">
-          Cuáles son los fondos Ameris con mayor presencia en compañías de seguros.
-        </div>
+        <div class="card-header"><div class="card-title">Top fondos Ameris</div></div>
         <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
           <table>
-            <thead><tr><th>#</th><th>Fondo</th><th class="num">N° clientes</th><th class="num">AUM</th><th class="num">% Ameris</th></tr></thead>
+            <thead><tr><th>#</th><th>Fondo</th><th class="num">Clientes</th><th class="num">AUM</th><th class="num">%</th></tr></thead>
             <tbody>${fundsRows}</tbody>
           </table>
         </div>
       </div>
-
       <div class="card">
-        <div class="card-header"><div class="card-title">Top aseguradoras clientes Ameris</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 4px">
-          Cuáles son las aseguradoras con mayor inversión en fondos Ameris. Top 3 destacados (concentración).
-        </div>
+        <div class="card-header"><div class="card-title">Top aseguradoras clientes</div></div>
         <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
           <table>
-            <thead><tr><th>#</th><th>Compañía</th><th class="num">AUM en Ameris</th><th class="num">% Ameris</th></tr></thead>
+            <thead><tr><th>#</th><th>Compañía</th><th class="num">AUM en Ameris</th><th class="num">%</th></tr></thead>
             <tbody>${clientsRows}</tbody>
           </table>
         </div>
@@ -4642,9 +4636,9 @@ function renderPulsoAmeris() {
     <!-- Competidores directos + Oportunidades -->
     <div class="grid-2" style="align-items:start">
       <div class="card">
-        <div class="card-header"><div class="card-title">Competidores directos en el ranking</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 4px">
-          AGFs en posiciones cercanas a Ameris en el ranking. La columna "Diferencia" muestra cuánto AUM nos separa de cada uno (rojo = está sobre nosotros, verde = está bajo).
+        <div class="card-header"><div class="card-title">Competidores directos</div></div>
+        <div style="font-size:11.5px;color:var(--c-muted);padding:8px 14px 0">
+          AGFs vecinas a Ameris en el ranking. <strong style="color:#b91c1c">Rojo</strong> = está sobre nosotros · <strong style="color:#047857">Verde</strong> = está bajo.
         </div>
         <div class="table-wrap">
           <table>
@@ -4653,16 +4647,15 @@ function renderPulsoAmeris() {
           </table>
         </div>
       </div>
-
       <div class="card">
         <div class="card-header"><div class="card-title">Oportunidades comerciales</div></div>
-        <div style="font-size:11.5px;color:var(--c-muted);margin:6px 0 4px">
-          Aseguradoras que tienen CFI en cartera pero <strong>ninguna posición Ameris</strong>. Ordenadas por su CFI total — más AUM = más potencial de captura.
+        <div style="font-size:11.5px;color:var(--c-muted);padding:8px 14px 0">
+          Aseguradoras con CFI pero <strong>sin posiciones Ameris</strong>. Más CFI total = más potencial de captura.
         </div>
         <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
           <table>
-            <thead><tr><th>#</th><th>Aseguradora sin Ameris</th><th class="num">CFI total</th></tr></thead>
-            <tbody>${opportunityRows || '<tr><td colspan="3" class="empty-state">Todas las aseguradoras del sistema ya tienen al menos un fondo Ameris</td></tr>'}</tbody>
+            <thead><tr><th>#</th><th>Aseguradora</th><th class="num">CFI total</th></tr></thead>
+            <tbody>${opportunityRows || '<tr><td colspan="3" class="empty-state">Todas las aseguradoras del sistema ya tienen Ameris</td></tr>'}</tbody>
           </table>
         </div>
       </div>
