@@ -850,6 +850,20 @@
   /* Color-coded delta */
   .pos { color: var(--c-success); }
   .neg { color: var(--c-danger); }
+  .conflict-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    vertical-align: 2px;
+    cursor: help;
+  }
   /* Sortable header indicator */
   th[data-sort-key] { position: relative; }
   th.sorted-asc::after { content: " ↑"; }
@@ -1340,6 +1354,8 @@
 <script src="maps.js"></script>
 <!-- Datos AUM sistema asegurador chileno (CMF · semestral · USD) -->
 <script src="insurer_aum_data.js"></script>
+<!-- Tabla autoritativa nemo → administradora real + nombre fondo (de NOMBRE_EMISOR B.5) -->
+<script src="nemo_authority.js"></script>
 
 <script>
 /* =======================================================================
@@ -1594,9 +1610,14 @@ function parseB2File(lines, filename) {
     try {
       const rec = parseDetail(line);
       rec.category = categorize(rec);
-      // Use canonical AGF mapping so merged entities (e.g. Ameris BIM Capital → Ameris Capital,
-      // PAGF Penta → Penta Las Américas) display under the same brand everywhere.
-      rec.agf = canonicalAgfName(rec.rutEmisor);
+      // resolveAgf prioriza NEMO_AUTHORITY (extraído del NOMBRE_EMISOR del propio
+      // archivo B.5) sobre RUT_AGF_MAP, corrigiendo casos donde la compañía de
+      // seguros reportó un RUT_ADMINISTRADORA equivocado a CMF.
+      const agfInfo = resolveAgf(rec);
+      rec.agf = agfInfo.name;
+      rec.agfSource = agfInfo.source;       // 'NOMBRE_EMISOR' | 'RUT_AGF_MAP'
+      rec.agfMismatch = agfInfo.mismatch;   // true si el RUT registrado contradice al nombre real
+      rec.agfFromRut = agfInfo.rutMappingName;
       rec.nemoFriendly = friendlyForNemo(rec.nemo);
       if (utf8ByteShift(line.slice(0, 61)) > 0) utf8ShiftedLines++;
       holdings.push(rec);
@@ -1815,8 +1836,14 @@ function parseB5File(lines, filename) {
       const rec = (t === '2') ? parseB5Detail2(line) : parseB5Detail3(line);
       rec.category = categorizeB5(rec);
       rec.nemoFriendly = friendlyForNemo(rec.nemo);
-      if (rec._subtype === 'cuota' && rec.rutAdm) {
-        rec.agf = canonicalAgfName(rec.rutAdm);
+      if (rec._subtype === 'cuota') {
+        // Resuelve AGF usando NEMO_AUTHORITY (fuente autoritativa del NOMBRE_EMISOR)
+        // antes de fallback al RUT_ADMINISTRADORA del archivo.
+        const agfInfo = resolveAgf(rec);
+        rec.agf = agfInfo.name;
+        rec.agfSource = agfInfo.source;
+        rec.agfMismatch = agfInfo.mismatch;
+        rec.agfFromRut = agfInfo.rutMappingName;
       } else {
         rec.agf = rec.nombreEmisor || '—';
       }
@@ -1860,10 +1887,39 @@ let STATE = {
   agfFilter: '',      // '' | 'ameris' | 'rut:RUT_EMISOR'
 };
 
-// Look up a friendly name for a CMF nemotécnico via NEMO_NAME_MAP.
+// Look up a friendly name for a CMF nemotécnico.
+// Prioridad: 1) NEMO_NAME_MAP (curado manual), 2) NEMO_AUTHORITY (extraído del
+// NOMBRE_EMISOR de los archivos B.5, formato "ADMIN-FONDO"), 3) null.
 function friendlyForNemo(nemo) {
   if (!nemo) return nemo;
-  return (window.NEMO_NAME_MAP && window.NEMO_NAME_MAP[nemo]) || null;
+  if (window.NEMO_NAME_MAP && window.NEMO_NAME_MAP[nemo]) return window.NEMO_NAME_MAP[nemo];
+  if (window.NEMO_AUTHORITY && window.NEMO_AUTHORITY[nemo]) {
+    const auth = window.NEMO_AUTHORITY[nemo];
+    if (auth.f) return auth.f;  // nombre del fondo limpio
+  }
+  return null;
+}
+
+// Algunas compañías de seguros reportan a CMF un RUT_ADMINISTRADORA que no
+// corresponde al AGF real del fondo (errores de filing). Esta función resuelve
+// la AGF REAL de un registro usando la fuente más autoritativa disponible:
+// 1) NEMO_AUTHORITY (extraído del NOMBRE_EMISOR del propio archivo B.5), si tiene admin
+// 2) canonicalAgfName(rut_registrado) (basado en RUT_AGF_MAP) como fallback
+// Retorna { name, source, mismatch } donde mismatch=true si la AGF real difiere
+// significativamente del RUT registrado.
+function resolveAgf(rec) {
+  const rutRegistrado = rec.rutEmisor || rec.rutAdm;
+  const nameFromRut = rutRegistrado ? canonicalAgfName(rutRegistrado) : '—';
+  const auth = (window.NEMO_AUTHORITY && rec.nemo) ? window.NEMO_AUTHORITY[rec.nemo] : null;
+  if (auth && auth.a) {
+    // Comparación normalizada para detectar mismatch
+    const norm = s => (s || '').toUpperCase().replace(/\b(S\.?A\.?|AGF|ADM|ADMIN|ADMINISTRADORA|GRAL|GENERAL|FONDOS|S A)\b/g, '').replace(/[^\w]/g, '').slice(0, 8);
+    const authNorm = norm(auth.a);
+    const rutNorm = norm(nameFromRut);
+    const mismatch = !!(authNorm && rutNorm && !authNorm.startsWith(rutNorm.slice(0, 6)) && !rutNorm.startsWith(authNorm.slice(0, 6)));
+    return { name: auth.a, source: 'NOMBRE_EMISOR', mismatch, rutMappingName: nameFromRut };
+  }
+  return { name: nameFromRut, source: 'RUT_AGF_MAP', mismatch: false, rutMappingName: nameFromRut };
 }
 
 // AGF merge map — different RUTs that legally exist as separate entities but
@@ -1994,7 +2050,15 @@ function rehydrateB5Record(s) {
     valorFinal: s.vf, clasifRiesgo: s.cr,
   };
   r.category = categorizeB5(r);
-  r.agf = r.rutAdm ? canonicalAgfName(r.rutAdm) : (r.nombreEmisor || '—');
+  if (r.rutAdm) {
+    const agfInfo = resolveAgf(r);
+    r.agf = agfInfo.name;
+    r.agfSource = agfInfo.source;
+    r.agfMismatch = agfInfo.mismatch;
+    r.agfFromRut = agfInfo.rutMappingName;
+  } else {
+    r.agf = r.nombreEmisor || '—';
+  }
   r.nemoFriendly = friendlyForNemo(r.nemo);
   return r;
 }
@@ -2059,10 +2123,14 @@ function loadState() {
           f.insurerName = FILENAME_RUT_TO_INSURER[m[1]];
         }
       }
-      // B.2 — re-apply canonical AGF mapping + NEMO_NAME_MAP + user overrides
+      // B.2 — re-apply AGF resolution (NEMO_AUTHORITY > RUT_AGF_MAP) + nemo friendly
       if (Array.isArray(f.holdings)) {
         for (const h of f.holdings) {
-          h.agf = canonicalAgfName(h.rutEmisor);
+          const agfInfo = resolveAgf(h);
+          h.agf = agfInfo.name;
+          h.agfSource = agfInfo.source;
+          h.agfMismatch = agfInfo.mismatch;
+          h.agfFromRut = agfInfo.rutMappingName;
           h.nemoFriendly = friendlyForNemo(h.nemo);
         }
       }
@@ -2072,10 +2140,17 @@ function loadState() {
       // of the `_s` discriminator — those we fix up in place.
       if (Array.isArray(f.b5Records)) {
         f.b5Records = f.b5Records.map(r => {
-          if (r && r._s) return rehydrateB5Record(r);  // slimmed → full
-          // legacy un-slimmed record: just ensure agf/nemoFriendly are current
-          if (r._subtype === 'cuota' && r.rutAdm) r.agf = canonicalAgfName(r.rutAdm);
-          else if (!r.agf) r.agf = r.nombreEmisor || '—';
+          if (r && r._s) return rehydrateB5Record(r);  // slimmed → full (incluye resolveAgf)
+          // legacy un-slimmed record: re-resolver AGF y nemoFriendly con la fuente autoritativa
+          if (r._subtype === 'cuota' && r.rutAdm) {
+            const agfInfo = resolveAgf(r);
+            r.agf = agfInfo.name;
+            r.agfSource = agfInfo.source;
+            r.agfMismatch = agfInfo.mismatch;
+            r.agfFromRut = agfInfo.rutMappingName;
+          } else if (!r.agf) {
+            r.agf = r.nombreEmisor || '—';
+          }
           r.nemoFriendly = friendlyForNemo(r.nemo);
           return r;
         });
@@ -2569,24 +2644,25 @@ function aggregateByAGF(holdings) {
   })).sort((a, b) => b.valLibro - a.valLibro);
 }
 
-// Renderiza el nombre de un fondo distinguiendo visualmente cuando NO tiene
-// un nombre amigable mapeado. Si `nemoFriendly` está y es distinto de `nemo`,
-// muestra el nombre amigable en negrita + el nemo abajo en gris.
-// Si NO hay nombre amigable, muestra el nemo en cursiva con un ⚠ pequeño
-// para que el usuario sepa que ese fondo requiere identificación.
+// Renderiza el nombre de un fondo distinguiendo visualmente:
+//  - Con nombre amigable: lo muestra en negrita + nemo abajo en gris
+//  - Sin nombre amigable: nemo en cursiva naranja con ⚠
+//  - Si hay conflicto AGF (RUT registrado ≠ admin real): badge naranja
 function nemoDisplay(rec) {
   const friendly = rec.nemoFriendly;
   const nemo = rec.nemo;
+  const conflictBadge = rec.agfMismatch
+    ? `<span class="conflict-badge" title="RUT registrado en archivo apunta a '${escapeHtml(rec.agfFromRut || '')}', pero el NOMBRE_EMISOR dice que la administradora real es '${escapeHtml(rec.agf || '')}'. Hay un error de filing de la compañía de seguros. El dashboard usa el dato del NOMBRE_EMISOR (autoritativo).">⚠ RUT errado</span>`
+    : '';
   if (friendly && friendly !== nemo) {
-    return `<strong>${escapeHtml(friendly)}</strong>` +
+    return `<strong>${escapeHtml(friendly)}</strong>${conflictBadge}` +
            `<div style="color:var(--c-muted);font-size:11px">${escapeHtml(nemo)}</div>`;
   }
   if (friendly) {
-    return `<strong>${escapeHtml(friendly)}</strong>`;
+    return `<strong>${escapeHtml(friendly)}</strong>${conflictBadge}`;
   }
-  // Sin nombre amigable — visualmente distinguido para auditoría
-  return `<strong style="font-style:italic;color:#9a3412">${escapeHtml(nemo)}</strong>` +
-         `<div style="color:#c2410c;font-size:10px" title="Sin nombre amigable mapeado en maps.js — revisar Auditoría en Resumen General">⚠ pendiente de identificar</div>`;
+  return `<strong style="font-style:italic;color:#9a3412">${escapeHtml(nemo)}</strong>${conflictBadge}` +
+         `<div style="color:#c2410c;font-size:10px" title="Sin nombre amigable mapeado">⚠ pendiente de identificar</div>`;
 }
 
 // Auditoría: detecta nemos sin nombre amigable en NEMO_NAME_MAP. Recorre la
