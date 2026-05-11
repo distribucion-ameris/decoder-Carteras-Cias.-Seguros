@@ -82,7 +82,7 @@ window.RUT_AGF_MAP = {
   "076522369-5": "Andes III Fondo de Inversión Privado",
   "077274820-5": "IAM S.A.",
   "076039786-5": "Inversiones Inmobiliarias Seguras S.A.",
-  "076021066-8": "Nmobiliaria Valle Del Mar Etap",
+  "076021066-8": "Administradora Valle del Mar S.A.",
   "097023000-9": "Itaú CorpBanca S.A.",
   "096782380-5": "Montemar Marítima S.A.",
   "078075573-3": "Nueva Chamisera S.A.",
