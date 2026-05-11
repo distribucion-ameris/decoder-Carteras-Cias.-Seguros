@@ -1923,45 +1923,43 @@ function resolveAgf(rec) {
 }
 
 // AGF merge map — different RUTs that legally exist as separate entities but
-// represent the same business unit for analysis. The aggregations group them
-// under the canonical (target) RUT.
+// represent the same business unit for analysis.
+//
+// IMPORTANTE: auditado contra el campo NOMBRE_EMISOR de los archivos B.5
+// (mayo 2026). Se eliminaron 8 merges que estaban fusionando AGFs DISTINTAS:
+//   - Credicorp Capital (099549940-1) NO es Moneda (096684990-8)
+//   - VolcomCapital (076493189-0) NO es Link Capital Partners (076963034-1)
+//   - Singular Asset Mgmt (076917333-1) NO es Link Capital Partners
+//   - LarraínVial Activos (076081215-3) NO es Link Capital Partners
+//   - Principal AGF (091999000-7) NO es Penta Las Américas (096632170-9)
+//   - Banchile AGF (096767630-6) NO es BCI Asset Mgmt (096530900-4)
+//   - Falcom AGF (076507811-3) NO es Compass Group Chile (096804330-7)
+//   - Zurich Chile Asset (077750920-9) NO es Moneda (096684990-8)
+// Estos errores explicaban los conflictos RUT vs NOMBRE_EMISOR detectados.
 const AGF_MERGE_MAP = {
-  // Ameris — todas las sub-entidades bajo "Ameris Capital AGF"
+  // Ameris — sub-entidades bajo "Ameris Capital AGF" (confirmado por el usuario)
   '076028139-5': '076503273-3', // Ameris BIM Capital
   '076245696-6': '076503273-3', // Ameris Multifamily Partners
   '076578803-K': '076503273-3', // Ameris Capital (alt RUT)
-  // Penta + Las Américas (entidad combinada "Penta Las Américas AGF")
-  '091999000-7': '096632170-9', // PAGF Penta
-  '000000001-9': '096632170-9', // Las Américas Infraestructura (placeholder RUT)
-  // Asset Chile — dos RUTs con el mismo nombre
+  // Las Américas — RUT placeholder
+  '000000001-9': '096632170-9', // Las Américas Infraestructura (placeholder histórico)
+  // Asset Chile — dos RUTs del mismo nombre (sin contradicción en archivos)
   '076328507-3': '076172904-7', // Asset Chile (alt RUT)
-  // LarraínVial — todas las sub-entidades unificadas
-  '076081215-3': '076963034-1', // LarrainVial Activos
-  '076493189-0': '076963034-1', // LarrainVial Renta Variable
-  '076917333-1': '076963034-1', // LarrainVial ETF
-  '077355416-1': '076963034-1', // LarrainVial AM
-  // Moneda / Zurich PIMCO — Celfin/Moneda y Zurich Chile Asset AGF son la misma
-  // entidad bajo "Zurich Chile AGF / PIMCO" (RUT 096684990-8)
-  '099549940-1': '096684990-8', // Celfin / Moneda
-  '077750920-9': '096684990-8', // ZURICH CHILE ASSET AGF (segundo RUT del mismo grupo)
-  // HMC
-  '076107002-9': '076034728-0', // HMC - Rentas Vida Parque FIP → HMC Capital AGF
-  // BTG Pactual (registro antiguo + registro vigente)
-  '000009501-K': '096966250-7', // BTG Pactual (registro antiguo)
-  // Banchile (3 RUTs distintos para la misma entidad)
-  '076708560-5': '096530900-4', // Banchile Inversiones (alt)
-  '096767630-6': '096530900-4', // Banchile AGF
-  // WEG Chile (2 RUTs idénticos en nombre)
-  '076503272-5': '077087811-K', // WEG Chile (alt)
-  // Compass — "Compass AGF" y "Compass Group AGF" son la misma
-  '076507811-3': '096804330-7', // Compass AGF → Compass Group AGF
-  // Fintual / Frontier (3 RUTs)
-  '076930948-9': '076543031-3', // Fintual Frontier (alt)
-  '076423558-4': '076543031-3', // Fintual Frontier (alt)
-  // DCV Vida (2 RUTs alt)
-  '096658670-2': '096666140-2', // DCV Vida (alt)
-  // BSANTANDER (2 RUTs)
-  '097015000-5': '097036000-K', // BSANTANDER (alt)
+  // HMC — sin contradicción en archivos
+  '076107002-9': '076034728-0',
+  // BTG Pactual — registro antiguo + vigente
+  '000009501-K': '096966250-7',
+  // Banchile — sólo registro alt sin contradicción
+  '076708560-5': '096530900-4',
+  // WEG — alt sin contradicción
+  '076503272-5': '077087811-K',
+  // Frontal Trust — alt sin contradicción
+  '076930948-9': '076543031-3',
+  '076423558-4': '076543031-3',
+  // DCV Vida — alt sin contradicción
+  '096658670-2': '096666140-2',
+  // BSANTANDER — alt sin contradicción
+  '097015000-5': '097036000-K',
 };
 function canonicalAgfRut(rut) {
   return AGF_MERGE_MAP[rut] || rut;
