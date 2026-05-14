@@ -3429,51 +3429,33 @@ function renderGeneral() {
     `;
   }
 
+  // Top 15 AGFs · sección única (no duplicada con macroSections)
+  const top15AgfsBlock = `
+    <h3 style="margin:30px 0 14px;color:var(--c-ameris-navy);font-size:16px;font-weight:700;letter-spacing:-.3px">🏢 Top 15 AGFs · ${lastPeriod}</h3>
+    <div class="card">
+      <div style="padding:10px 14px 0;font-size:11.5px;color:var(--c-muted)">
+        Ranking de administradoras por Val. Libro del último período. Mostrando fondos administrados, cías. clientes y posiciones totales.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>AGF</th>
+            <th class="num">Fondos</th><th class="num">Cías.</th>
+            <th class="num">Pos.</th><th class="num">Val. Libro</th>
+          </tr></thead>
+          <tbody>${topAGFRows || '<tr><td colspan="6" class="empty-state">Sin datos</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
   container.innerHTML = `
     <div class="notice">
       <strong>Resumen general</strong> · Todas las métricas se calculan a partir de los archivos B.2 y B.5 cargados. Cargá más períodos para ver evolución y deltas.
     </div>
     ${kpis}
     ${macroSections}
-
-    <h3 style="margin:30px 0 14px;color:var(--c-ameris-navy);font-size:16px;font-weight:700;letter-spacing:-.3px">📂 Detalle · ${lastPeriod}</h3>
-
-    <div class="grid-2 equal-height">
-      <div class="card">
-        <div class="card-header"><div class="card-title">Distribución por categoría · ${lastPeriod}</div></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Categoría</th><th class="num" title="VALOR_LIBRO total — valor contable de las posiciones en pesos chilenos">Val. Libro</th><th>% del total</th></tr></thead>
-            <tbody>${catRows || '<tr><td colspan="3" class="empty-state">Sin datos</td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header"><div class="card-title">Top 15 AGFs · ${lastPeriod}</div></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr>
-              <th>#</th><th>AGF</th>
-              <th class="num">Fondos</th><th class="num">Cías.</th>
-              <th class="num">Pos.</th><th class="num">Val. Libro</th>
-            </tr></thead>
-            <tbody>${topAGFRows || '<tr><td colspan="6" class="empty-state">Sin datos</td></tr>'}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">Top 15 Compañías de Seguros · ${lastPeriod}</div></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>#</th><th>Compañía</th>
-            <th class="num">Posiciones</th><th class="num">Val. Libro</th>
-          </tr></thead>
-          <tbody>${topInsRows || '<tr><td colspan="4" class="empty-state">Sin datos</td></tr>'}</tbody>
-        </table>
-      </div>
-    </div>
+    ${top15AgfsBlock}
   `;
 }
 
