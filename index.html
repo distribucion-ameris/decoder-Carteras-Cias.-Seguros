@@ -850,6 +850,43 @@
   /* Color-coded delta */
   .pos { color: var(--c-success); }
   .neg { color: var(--c-danger); }
+
+  /* Scroll fade hint — usado en contenedores con max-height + overflow-y.
+     El gradient se muestra abajo cuando hay contenido oculto debajo del fold.
+     Se activa con la clase .scroll-fade y se oculta con .scroll-fade.at-bottom */
+  .scroll-fade {
+    position: relative;
+  }
+  .scroll-fade::after {
+    content: "";
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 32px;
+    background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.95) 100%);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity .15s ease;
+    border-radius: 0 0 var(--r-sm) var(--r-sm);
+  }
+  .scroll-fade.at-bottom::after { opacity: 0; }
+  .scroll-fade-hint {
+    position: absolute;
+    bottom: 4px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.95);
+    color: var(--c-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--c-border);
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    pointer-events: none;
+    z-index: 2;
+    letter-spacing: .3px;
+    transition: opacity .15s ease;
+  }
+  .scroll-fade.at-bottom .scroll-fade-hint { opacity: 0; }
   /* Modal de detalle por AGF (insight de Pulso Ameris) */
   .agf-modal {
     position: fixed; inset: 0; z-index: 10000;
@@ -6360,6 +6397,39 @@ function renderAll() {
   // Toggle welcome card visibility
   const welcome = document.getElementById('welcome-card');
   if (welcome) welcome.style.display = STATE.files.length === 0 ? '' : 'none';
+  // Detectar scroll containers y agregar fade hint (ver CSS .scroll-fade)
+  setTimeout(decorateScrollContainers, 50);
+}
+
+// Recorre contenedores con max-height + overflow-y:auto y les agrega
+// indicador visual de scroll (fade gradient + hint "↓ más abajo").
+// Se ejecuta tras cada render y observa scroll events para ocultar el
+// hint cuando el usuario llega al final.
+function decorateScrollContainers() {
+  const candidates = document.querySelectorAll('[style*="overflow-y:auto"], [style*="overflow-y: auto"]');
+  candidates.forEach(el => {
+    if (el.dataset.scrollHintWired === '1') return;  // ya wireado
+    // Solo si hay contenido oculto debajo
+    const hasOverflow = el.scrollHeight > el.clientHeight + 4;
+    if (!hasOverflow) return;
+    el.dataset.scrollHintWired = '1';
+    el.classList.add('scroll-fade');
+    // Agregar hint visual (chip)
+    if (!el.querySelector(':scope > .scroll-fade-hint')) {
+      const hint = document.createElement('div');
+      hint.className = 'scroll-fade-hint';
+      const hiddenCount = el.querySelectorAll('tbody tr').length;
+      hint.textContent = hiddenCount > 0 ? `↓ scroll para ver más` : `↓ más abajo`;
+      el.appendChild(hint);
+    }
+    // Actualizar estado al scrollear
+    const updateState = () => {
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+      el.classList.toggle('at-bottom', atBottom);
+    };
+    el.addEventListener('scroll', updateState, { passive: true });
+    updateState();
+  });
 }
 
 function setupControls() {
