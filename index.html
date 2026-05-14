@@ -2516,46 +2516,152 @@ function rehydrateB5Record(s) {
   return r;
 }
 
-let SAVE_QUOTA_WARNED = false;
-function saveState() {
-  try {
-    const minimal = STATE.files.map(f => ({
-      fileType: f.fileType || 'b2',
-      fileName: f.fileName,
-      insurerRut: f.insurerRut,
-      insurerName: f.insurerName,
-      periodo: f.periodo,
-      holdings: f.holdings,
-      // B.5 records are stored slimmed — full form rebuilt by rehydrateB5Record on load.
-      b5Records: f.b5Records ? f.b5Records.map(slimB5Record) : undefined,
-      b5BienesRaicesCount: f.b5BienesRaicesCount,
-      b5FilialesCount: f.b5FilialesCount,
-    }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(minimal));
-    SAVE_QUOTA_WARNED = false;  // reset once a save succeeds
-  } catch (e) {
-    console.warn('Storage save failed:', e);
-    if (!SAVE_QUOTA_WARNED && (e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || '')))) {
-      SAVE_QUOTA_WARNED = true;
-      setTimeout(() => alert(
-        'No se pudieron guardar todos los archivos en el navegador: superaste la cuota de almacenamiento (~5 MB).\n\n' +
-        'Lo cargado sigue funcionando en esta sesión, pero los archivos NO persistirán al refrescar.\n\n' +
-        'Sugerencia: usa "Limpiar datos" y carga sólo los meses que necesitas analizar (B.5 ocupa ~2 MB por mes).'
-      ), 80);
+// === IndexedDB layer (almacenamiento ilimitado para histórico completo) ===
+// localStorage tope ~5-10MB. IndexedDB soporta cientos de MB por origen.
+// Permite mantener todos los archivos cargados (2025 + 2026...) sin perderlos.
+const IDB_NAME = 'ameris-cmf-dashboard';
+const IDB_VERSION = 1;
+const IDB_STORE = 'files';
+
+function _openIDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'id' });
+      }
+    };
+  });
+}
+
+async function _idbSaveAll(files) {
+  const db = await _openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    store.clear();  // reemplaza todo el contenido
+    for (const f of files) {
+      const id = `${f.insurerRut || 'unknown'}__${f.periodo || '000000'}__${f.fileType || 'b2'}`;
+      const slim = {
+        id,
+        fileType: f.fileType || 'b2',
+        fileName: f.fileName,
+        insurerRut: f.insurerRut,
+        insurerName: f.insurerName,
+        periodo: f.periodo,
+        holdings: f.holdings,
+        // B.5 records: guardar slim form (mucho más chico, se rehydra al cargar)
+        b5Records: f.b5Records ? f.b5Records.map(slimB5Record) : undefined,
+        b5BienesRaicesCount: f.b5BienesRaicesCount,
+        b5FilialesCount: f.b5FilialesCount,
+      };
+      store.put(slim);
     }
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function _idbLoadAll() {
+  const db = await _openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.getAll();
+    req.onsuccess = () => { db.close(); resolve(req.result || []); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  });
+}
+
+async function _idbClear() {
+  const db = await _openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).clear();
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+let SAVE_QUOTA_WARNED = false;
+let SAVE_IN_FLIGHT = null;
+
+// Guarda STATE.files en IndexedDB (async, fire-and-forget).
+// Si IDB falla, intenta localStorage como fallback (legacy).
+function saveState() {
+  // Coalescer guardados consecutivos: si ya hay uno en vuelo, espera y reintenta
+  const doSave = async () => {
+    try {
+      await _idbSaveAll(STATE.files);
+      SAVE_QUOTA_WARNED = false;
+    } catch (e) {
+      console.warn('IDB save failed, falling back to localStorage:', e);
+      try {
+        const minimal = STATE.files.map(f => ({
+          fileType: f.fileType || 'b2',
+          fileName: f.fileName,
+          insurerRut: f.insurerRut,
+          insurerName: f.insurerName,
+          periodo: f.periodo,
+          holdings: f.holdings,
+          b5Records: f.b5Records ? f.b5Records.map(slimB5Record) : undefined,
+          b5BienesRaicesCount: f.b5BienesRaicesCount,
+          b5FilialesCount: f.b5FilialesCount,
+        }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(minimal));
+      } catch (e2) {
+        if (!SAVE_QUOTA_WARNED) {
+          SAVE_QUOTA_WARNED = true;
+          setTimeout(() => alert(
+            'No se pudieron guardar los archivos en el navegador.\n\n' +
+            'Lo cargado sigue funcionando en esta sesión, pero NO persistirá al refrescar.\n\n' +
+            'Detalle: ' + (e2.message || e2)
+          ), 80);
+        }
+      }
+    } finally {
+      SAVE_IN_FLIGHT = null;
+    }
+  };
+  if (SAVE_IN_FLIGHT) {
+    // Re-ejecuta cuando el actual termine, para no perder el último estado
+    SAVE_IN_FLIGHT = SAVE_IN_FLIGHT.then(doSave);
+  } else {
+    SAVE_IN_FLIGHT = doSave();
   }
 }
 
-function loadState() {
+async function loadState() {
+  let arr = null;
+  // 1) Intentar IndexedDB (almacenamiento principal)
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    // Backward compat: support both Array<files> and { files, ... } shapes.
-    let arr;
-    if (Array.isArray(parsed)) arr = parsed;
-    else if (parsed && Array.isArray(parsed.files)) arr = parsed.files;
-    else return;
+    const idbFiles = await _idbLoadAll();
+    if (idbFiles.length > 0) arr = idbFiles;
+  } catch (e) {
+    console.warn('IDB load failed:', e);
+  }
+  // 2) Si IDB vacío, intentar migrar desde localStorage (compatibilidad)
+  if (!arr || arr.length === 0) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) arr = parsed;
+        else if (parsed && Array.isArray(parsed.files)) arr = parsed.files;
+        if (arr && arr.length > 0) {
+          console.log(`Migrando ${arr.length} archivos de localStorage → IndexedDB`);
+          // La migración se completará tras procesar y guardar abajo
+        }
+      }
+    } catch (e) {
+      console.warn('localStorage load failed:', e);
+    }
+  }
+  if (!arr || arr.length === 0) return;
+  try {
     // Heal cached files: insurer-level fixes + holdings-level lookups against the
     // current (possibly updated) RUT_AGF_MAP and NEMO_NAME_MAP. This means newly
     // added entries to those maps take effect on reload, without re-uploading files.
@@ -2610,6 +2716,18 @@ function loadState() {
       }
     }
     STATE.files = arr;
+    // Si llegamos acá desde localStorage (no había nada en IDB), persistir a IDB
+    // y limpiar localStorage para liberar espacio.
+    try {
+      const idbCheck = await _idbLoadAll();
+      if (idbCheck.length === 0 && STATE.files.length > 0) {
+        await _idbSaveAll(STATE.files);
+        localStorage.removeItem(STORAGE_KEY);
+        console.log('Migración a IndexedDB completa.');
+      }
+    } catch (e) {
+      console.warn('Migración IDB falló:', e);
+    }
   } catch (e) {
     console.warn('Storage load failed:', e);
   }
@@ -6506,6 +6624,9 @@ function _qualitySnapshot() {
 async function ingestFiles(fileList, expectedType) {
   const beforeSnapshot = _qualitySnapshot();
   const arr = Array.from(fileList);
+  if (arr.length >= 10) {
+    showSuccessToast(`Procesando ${arr.length} archivos...`);
+  }
   let mismatchedCount = 0;
   for (const f of arr) {
     try {
@@ -6755,10 +6876,11 @@ function setupControls() {
     STATE.agfFilter = e.target.value;
     renderAll();
   });
-  document.getElementById('btn-clear').addEventListener('click', () => {
+  document.getElementById('btn-clear').addEventListener('click', async () => {
     if (!confirm('¿Borrar todos los archivos cargados? Esta acción no se puede deshacer.')) return;
     STATE.files = [];
     STATE.errors = [];
+    try { await _idbClear(); } catch (e) { console.warn('IDB clear failed:', e); }
     localStorage.removeItem(STORAGE_KEY);
     renderAll();
     showSuccessToast('Archivos eliminados');
@@ -7823,7 +7945,7 @@ function downloadCSV(rows, filename) {
    ======================================================================= */
 
 window.addEventListener('DOMContentLoaded', async () => {
-  loadState();
+  await loadState();  // IDB es async — esperar antes del primer render
   setupTabs();
   setupDropzone();
   setupControls();
