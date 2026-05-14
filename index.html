@@ -1440,7 +1440,7 @@
     </div>
     <div class="right">
       <span class="ab-divider"></span>
-      <button class="btn btn-secondary" type="button" id="btn-quality" title="Auditoría de los datos cargados: nemos sin nombre, AGFs no mapeadas, posibles truncamientos y conflictos">Calidad de datos<span id="quality-badge" style="display:none;margin-left:6px;padding:1px 7px;border-radius:9px;background:#dc2626;color:white;font-size:10.5px;font-weight:700;line-height:14px;vertical-align:1px"></span></button>
+      <button class="btn btn-secondary" type="button" id="btn-quality" title="Auditoría de los datos cargados: nemos sin nombre, AGFs no mapeadas, posibles truncamientos y conflictos">🔍 Calidad de datos<span id="quality-badge" style="display:none;margin-left:6px;padding:1px 7px;border-radius:9px;background:#0891b2;color:white;font-size:10.5px;font-weight:700;line-height:14px;vertical-align:1px"></span></button>
       <button class="btn btn-secondary" type="button" id="btn-export-csv" title="Descarga los datos visibles como archivo CSV (compatible con Excel)">Exportar CSV</button>
       <button class="btn btn-secondary" type="button" id="btn-clear" title="Borra todos los archivos cargados (acción no reversible)">Limpiar datos</button>
     </div>
@@ -5214,18 +5214,20 @@ function updateQualityBadge() {
   }
   badge.style.display = 'inline-block';
   badge.textContent = String(total);
+  // Tono informativo en lugar de "error crítico": no es que algo este roto,
+  // sino que hay items pendientes de revisar.
   if (critical > 0) {
-    badge.style.background = '#dc2626';  // rojo
-    btn.style.borderColor = '#dc2626';
-    btn.style.color = '#dc2626';
-    btn.style.background = '#fef2f2';
+    badge.style.background = '#0891b2';  // celeste/cyan informativo
+    btn.style.borderColor = '#0891b2';
+    btn.style.color = '#0e7490';
+    btn.style.background = '#ecfeff';
   } else {
-    badge.style.background = '#d97706';  // naranja para warnings
-    btn.style.borderColor = '#d97706';
-    btn.style.color = '#92400e';
-    btn.style.background = '#fffbeb';
+    badge.style.background = '#0ea5e9';  // azul claro para warnings
+    btn.style.borderColor = '#bae6fd';
+    btn.style.color = '#075985';
+    btn.style.background = '#f0f9ff';
   }
-  btn.title = `${critical} crítico${critical !== 1 ? 's' : ''} (Check nemo + AGFs sin mapear) · ${warnings} advertencia${warnings !== 1 ? 's' : ''} (posibles truncamientos + conflictos)`;
+  btn.title = `${total} ítem${total !== 1 ? 's' : ''} pendientes de revisar: ${critical} sin nombre/AGF · ${warnings} posibles truncamientos o conflictos`;
 }
 
 // Tracking persistente de issues ya vistos (localStorage). Cuando se abre el
@@ -6298,8 +6300,8 @@ function showQualityToast(newKeys) {
   if (parts.length === 0) return;
 
   const critical = counts.nemo + counts.rut > 0;
-  const color = critical ? '#dc2626' : '#d97706';
-  const bgColor = critical ? '#fef2f2' : '#fffbeb';
+  const color = critical ? '#0891b2' : '#0ea5e9';
+  const bgColor = critical ? '#ecfeff' : '#f0f9ff';
 
   // Remover toast previo si existe
   const prev = document.getElementById('quality-toast');
@@ -6316,10 +6318,10 @@ function showQualityToast(newKeys) {
   `;
   toast.innerHTML = `
     <div style="display:flex;align-items:start;gap:10px">
-      <div style="font-size:18px;line-height:1">${critical ? '⚠️' : '⚡'}</div>
+      <div style="font-size:18px;line-height:1">🔍</div>
       <div style="flex:1">
         <div style="font-weight:600;color:${color};margin-bottom:6px">
-          ${critical ? 'Datos nuevos requieren revisión' : 'Datos nuevos detectados'}
+          ${critical ? 'Hay items pendientes de revisar' : 'Items nuevos detectados'}
         </div>
         <div>Tras la carga aparecieron: ${parts.join(', ')}.</div>
         <div style="margin-top:10px;display:flex;gap:8px">
