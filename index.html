@@ -1803,6 +1803,8 @@ function categorizeB5(rec) {
   if (t === 'CFICREX') return 'CFI Capital de Riesgo';
   if (t === 'CFIFMEX') return 'CFI Fondo Mutuo';
   if (t === 'CFME') return 'Fondo Mutuo Ext.';
+  if (t === 'CFMIE') return 'Fondo Mutuo Ext.';
+  if (t.startsWith('CFM')) return 'Fondo Mutuo';
   if (t.startsWith('CFI')) return 'Cuota Fondo Inversión';
   return t || 'Otra Cuota';
 }
