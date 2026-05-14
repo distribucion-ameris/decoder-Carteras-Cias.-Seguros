@@ -6836,7 +6836,7 @@ function _generatePdfReport() {
   };
   drawKpi(MARGIN_X, `AUM CFI · ${lastP}`, fmtMoney(lastSum), `${lastIns} cías · ${lastAgfs} AGFs`);
   const deltaColor = periodDelta === null ? COLOR.muted : (periodDelta > 0 ? COLOR.green : COLOR.red);
-  drawKpi(MARGIN_X + (kpiW + 2), `Δ vs ${prevP || 'anterior'}`, periodDelta === null ? '—' : fmtPct(periodDelta), prevP ? `${prevP} → ${lastP}` : 'Cargá 2+ períodos', deltaColor);
+  drawKpi(MARGIN_X + (kpiW + 2), `Variación vs ${prevP || 'anterior'}`, periodDelta === null ? '—' : fmtPct(periodDelta), prevP ? `${prevP} a ${lastP}` : 'Cargá 2+ períodos', deltaColor);
   const pctLocal = lastSum > 0 ? Math.round(lastLocal / lastSum * 100) : 0;
   const pctExt = lastSum > 0 ? Math.round(lastExt / lastSum * 100) : 0;
   drawKpi(MARGIN_X + (kpiW + 2) * 2, `Local vs Extranjero`, `${pctLocal}% / ${pctExt}%`, `B.2 ${fmtMoney(lastLocal)} · B.5 ${fmtMoney(lastExt)}`);
@@ -6906,8 +6906,12 @@ function _generatePdfReport() {
     y += 6;
   };
 
-  // === HELPER: header reducido en páginas siguientes ===
+  // === HELPER: header reducido SOLO en páginas 2+ (la pág 1 ya tiene
+  // el header grande pintado al inicio). autoTable invoca didDrawPage
+  // también en la pág 1 → debemos detectarlo y saltar.
   const drawPageHeader = () => {
+    const pg = doc.internal.getCurrentPageInfo().pageNumber;
+    if (pg === 1) return;  // no pintar encima del header grande
     doc.setFillColor(...COLOR.navy);
     doc.rect(0, 0, PAGE_W, 10, 'F');
     doc.setTextColor(...COLOR.white);
@@ -6946,7 +6950,7 @@ function _generatePdfReport() {
   doc.autoTable({
     ...tableBase,
     startY: y,
-    head: [['#', 'Compañía', { content: 'Val. Libro', styles: { halign: 'right' } }, { content: '% cartera', styles: { halign: 'right' } }, { content: 'Δ %', styles: { halign: 'right' } }]],
+    head: [['#', 'Compañía', { content: 'Val. Libro', styles: { halign: 'right' } }, { content: '% cartera', styles: { halign: 'right' } }, { content: 'Variación', styles: { halign: 'right' } }]],
     body: insBody,
     columnStyles: {
       0: { cellWidth: 8, textColor: COLOR.muted },
@@ -6974,7 +6978,7 @@ function _generatePdfReport() {
   doc.autoTable({
     ...tableBase,
     startY: y,
-    head: [['Categoría', { content: 'Val. Libro', styles: { halign: 'right' } }, { content: '% cartera', styles: { halign: 'right' } }, { content: 'Δ %', styles: { halign: 'right' } }]],
+    head: [['Categoría', { content: 'Val. Libro', styles: { halign: 'right' } }, { content: '% cartera', styles: { halign: 'right' } }, { content: 'Variación', styles: { halign: 'right' } }]],
     body: catBody,
     columnStyles: {
       0: { cellWidth: 'auto', fontStyle: 'bold' },
@@ -7000,7 +7004,7 @@ function _generatePdfReport() {
   doc.autoTable({
     ...tableBase,
     startY: y,
-    head: [['#', 'Fondo', 'AGF', { content: 'Cías.', styles: { halign: 'right' } }, { content: 'Val. Libro', styles: { halign: 'right' } }, { content: '% sist.', styles: { halign: 'right' } }, { content: 'Δ %', styles: { halign: 'right' } }]],
+    head: [['#', 'Fondo', 'AGF', { content: 'Cías.', styles: { halign: 'right' } }, { content: 'Val. Libro', styles: { halign: 'right' } }, { content: '% sist.', styles: { halign: 'right' } }, { content: 'Variación', styles: { halign: 'right' } }]],
     body: top5Body,
     columnStyles: {
       0: { cellWidth: 8, textColor: COLOR.muted },
@@ -7017,7 +7021,7 @@ function _generatePdfReport() {
   // === ALERTAS (solo si prevP) ===
   if (prevP && (fundGrowers.length > 0 || newFunds.length > 0)) {
     if (y > PAGE_H - 60) { doc.addPage(); drawPageHeader(); }
-    drawSectionTitle(`Alertas · ${prevP} → ${lastP}`);
+    drawSectionTitle(`Alertas · ${prevP} a ${lastP}`);
     // Fondos con mayor crecimiento
     if (fundGrowers.length > 0) {
       doc.setFont('helvetica', 'bold');
@@ -7035,7 +7039,7 @@ function _generatePdfReport() {
       doc.autoTable({
         ...tableBase,
         startY: y,
-        head: [['Fondo', 'AGF', { content: 'Val. Libro', styles: { halign: 'right' } }, { content: 'Δ abs.', styles: { halign: 'right' } }, { content: 'Δ %', styles: { halign: 'right' } }]],
+        head: [['Fondo', 'AGF', { content: 'Val. Libro', styles: { halign: 'right' } }, { content: 'Crecimiento', styles: { halign: 'right' } }, { content: 'Variación', styles: { halign: 'right' } }]],
         body: growersBody,
         columnStyles: {
           0: { cellWidth: 'auto' },
