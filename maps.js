@@ -292,6 +292,12 @@ window.NEMO_NAME_MAP = {
   "CFIAMYPI-E": "Ameris Multifamily Partners Fondo de Inversión",
   "CFIWEG-1": "FI WEG - 1",
   "CFINRENTAS": "F.I. Independencia Rentas Inmobiliarias",
+  "CFIEBLACKROCK-L": "Fondo Mutuo Banchile Blackrock ESG",
+  "CFIBCNVA-E": "BCI NV Fondo de Inversión",
+  "CFI-HLPDXE": "BTG Pactual Hamilton Lane Private Debt Evergreen Fondo de Inversión, Serie X",
+  "CFIZCHHYFR": "Zurich High Yield UF Fondo de Inversión, Serie R",
+  "CFIHPSCOLE-II": "Larraín Vial Activa Deuda Hipotecaria con Subsidio Habitacional Fondo de Inversión",
+  "CFI-CAPCE": "Moneda Carlyle Asia Partners VI Fondo de Inversión, Serie C",
 
   "LTM": "LATAM Airlines (LTM)",
   "CHILE": "Banco de Chile S.A.",
