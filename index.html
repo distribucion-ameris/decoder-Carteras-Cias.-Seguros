@@ -1523,7 +1523,7 @@
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </div>
-        <h4>1 · Descargá archivos desde CMF</h4>
+        <h4>1 · Descarga archivos desde CMF</h4>
         <p>El SVS / CMF publica mensualmente archivos por compañía con sus inversiones. Nombres tipo <code>a202603v.96812960</code> (B.2 · local) o <code>x202603v.96812960</code> (B.5 · extranjero).</p>
       </div>
       <div class="welcome-step">
@@ -1534,8 +1534,8 @@
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
         </div>
-        <h4>2 · Arrastralos a la zona azul/violeta</h4>
-        <p>Podés cargar varios archivos y varios meses a la vez. La detección de tipo es automática (B.2 o B.5 según prefijo). Los datos quedan guardados en tu navegador.</p>
+        <h4>2 · Arrástralos a la zona azul/violeta</h4>
+        <p>Puedes cargar varios archivos y varios meses a la vez. La detección de tipo es automática (B.2 o B.5 según prefijo). Los datos quedan guardados en tu navegador.</p>
       </div>
       <div class="welcome-step">
         <div class="step-icon">
@@ -3510,7 +3510,7 @@ function renderGeneral() {
         <div class="value" style="color:${periodDelta === null ? 'var(--c-muted)' : periodDelta > 0 ? '#047857' : '#b91c1c'}">
           ${periodDelta === null ? '—' : `${periodDelta > 0 ? '+' : ''}${(periodDelta * 100).toFixed(2)}%`}
         </div>
-        <div class="sublabel">${periodDelta === null ? 'Cargá 2+ períodos para comparar' : `${prevPeriod} → ${lastPeriod}`}</div>
+        <div class="sublabel">${periodDelta === null ? 'Carga 2+ períodos para comparar' : `${prevPeriod} → ${lastPeriod}`}</div>
       </div>
       <div class="kpi">
         <div class="label">Local vs Extranjero · último período</div>
@@ -3900,7 +3900,7 @@ function renderGeneral() {
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Resumen general</strong> · Todas las métricas se calculan a partir de los archivos B.2 y B.5 cargados. Cargá más períodos para ver evolución y deltas.
+      <strong>Resumen general</strong> · Todas las métricas se calculan a partir de los archivos B.2 y B.5 cargados. Carga más períodos para ver evolución y deltas.
     </div>
     ${kpis}
     ${macroSections}
@@ -5661,7 +5661,7 @@ function renderQuality() {
 
   const mismatchesHTML = sectionHTML(
     'Conflictos RUT vs NOMBRE_EMISOR',
-    'Posiciones donde el RUT_ADMINISTRADORA reportado por la compañía de seguros apunta a una AGF distinta de la que firma el NOMBRE_EMISOR. Si verificás que la alerta no aplica, agregá el nemo a RUT_MISMATCH_IGNORE en Dashboard/maps.js.',
+    'Posiciones donde el RUT_ADMINISTRADORA reportado por la compañía de seguros apunta a una AGF distinta de la que firma el NOMBRE_EMISOR. Si verificas que la alerta no aplica, agrega el nemo a RUT_MISMATCH_IGNORE en Dashboard/maps.js.',
     mismatches,
     `<th>Nemo</th><th>AGF real (NOMBRE_EMISOR)</th><th>AGF del RUT registrado</th><th class="num">Cías.</th><th class="num">Pos.</th><th>Acción</th>`,
     e => `<tr>
@@ -5701,7 +5701,7 @@ function renderQuality() {
       <div style="padding:0 16px 14px">
         <div style="color:var(--c-muted);font-size:12px;margin-bottom:10px;line-height:1.5">
           <div><strong style="color:#16a34a">✓ Comunitarias:</strong> ${communityCount} corrección${communityCount !== 1 ? 'es' : ''} ${communityCount > 0 ? 'aplicadas automáticamente a todos los usuarios (vienen del servidor).' : 'disponibles. Cuando el admin agregue correcciones al archivo central, aparecerán aquí.'}</div>
-          <div style="margin-top:4px"><strong style="color:#4f46e5">✓ Tuyas (este navegador):</strong> ${userCount > 0 ? `${userCount} corrección${userCount !== 1 ? 'es' : ''}.` : 'Ninguna. Usá <strong>✏ Corregir</strong> en las filas para corregir lo que veas mal.'}</div>
+          <div style="margin-top:4px"><strong style="color:#4f46e5">✓ Tuyas (este navegador):</strong> ${userCount > 0 ? `${userCount} corrección${userCount !== 1 ? 'es' : ''}.` : 'Ninguna. Usa <strong>✏ Corregir</strong> en las filas para corregir lo que veas mal.'}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button class="btn btn-secondary" id="quality-sync" type="button" style="font-size:12px;padding:5px 12px" title="Re-descarga community_overrides.json del servidor (por si el admin lo actualizó)">🔄 Sincronizar comunitarias</button>
@@ -5720,7 +5720,7 @@ function renderQuality() {
       <strong>Calidad de datos</strong> · Auditoría de los archivos cargados.
       ${allClean
         ? ' Todo limpio: nombres y AGFs resueltos correctamente.'
-        : ` Se detectaron <strong>${totalIssues}</strong> situaciones a revisar. Mirá cada sección para los detalles.`}
+        : ` Se detectaron <strong>${totalIssues}</strong> situaciones a revisar. Mira cada sección para los detalles.`}
     </div>
     ${userBar}
     ${checkNemoHTML}
@@ -6295,7 +6295,7 @@ function renderPulsoAmeris() {
       `;
     })() : `
       <div class="notice" style="background:#fffbeb;border-color:#fde68a">
-        <strong>Movimientos por AGF:</strong> cargá al menos 2 períodos para ver en qué administradoras las compañías de seguros están aumentando o reduciendo su inversión.
+        <strong>Movimientos por AGF:</strong> carga al menos 2 períodos para ver en qué administradoras las compañías de seguros están aumentando o reduciendo su inversión.
       </div>
     `}
 
@@ -6545,7 +6545,7 @@ function openAgfMoverDetail(rut, allCFI, lastP, prevP) {
         </div>
       </div>
 
-      <div style="padding:14px 22px 6px;font-size:13px;font-weight:700;color:var(--c-ameris-navy)">Fondos de la AGF <span style="font-size:10.5px;color:var(--c-muted);font-weight:500;margin-left:6px">· usá "Ver compañías" para desglosar quién invirtió en cada fondo</span></div>
+      <div style="padding:14px 22px 6px;font-size:13px;font-weight:700;color:var(--c-ameris-navy)">Fondos de la AGF <span style="font-size:10.5px;color:var(--c-muted);font-weight:500;margin-left:6px">· usa "Ver compañías" para desglosar quién invirtió en cada fondo</span></div>
       <div style="max-height:340px;overflow-y:auto;padding:0 22px">
         <table style="width:100%">
           <thead style="position:sticky;top:0;background:#f8fafc;z-index:1">
@@ -6895,7 +6895,7 @@ function setupControls() {
   // Exportar PDF del Resumen General · jsPDF nativo (texto seleccionable real).
   document.getElementById('btn-export-pdf').addEventListener('click', () => {
     if (STATE.files.length === 0) {
-      alert('Cargá archivos primero para poder generar el PDF.');
+      alert('Carga archivos primero para poder generar el PDF.');
       return;
     }
     // jsPDF se expone como window.jspdf.jsPDF en la build UMD.
@@ -7041,7 +7041,7 @@ function _generatePdfReport() {
   };
   drawKpi(MARGIN_X, `AUM CFI · ${lastP}`, fmtMoney(lastSum), `${lastIns} cías · ${lastAgfs} AGFs`);
   const deltaColor = periodDelta === null ? COLOR.muted : (periodDelta > 0 ? COLOR.green : COLOR.red);
-  drawKpi(MARGIN_X + (kpiW + 2), `Variación vs ${prevP || 'anterior'}`, periodDelta === null ? '—' : fmtPct(periodDelta), prevP ? `${prevP} a ${lastP}` : 'Cargá 2+ períodos', deltaColor);
+  drawKpi(MARGIN_X + (kpiW + 2), `Variación vs ${prevP || 'anterior'}`, periodDelta === null ? '—' : fmtPct(periodDelta), prevP ? `${prevP} a ${lastP}` : 'Carga 2+ períodos', deltaColor);
   const pctLocal = lastSum > 0 ? Math.round(lastLocal / lastSum * 100) : 0;
   const pctExt = lastSum > 0 ? Math.round(lastExt / lastSum * 100) : 0;
   drawKpi(MARGIN_X + (kpiW + 2) * 2, `Local vs Extranjero`, `${pctLocal}% / ${pctExt}%`, `B.2 ${fmtMoney(lastLocal)} · B.5 ${fmtMoney(lastExt)}`);
@@ -7435,7 +7435,7 @@ function _buildPdfHtml() {
       <div style="${S.kpi}">
         <div style="${S.kpiLabel}">Δ vs ${prevP || 'anterior'}</div>
         <div style="${S.kpiValue};color:${periodDelta === null ? '#6b7280' : (periodDelta > 0 ? '#047857' : '#b91c1c')}">${periodDelta === null ? '—' : fmtPct(periodDelta)}</div>
-        <div style="${S.kpiSub}">${prevP ? `${prevP} → ${lastP}` : 'Cargá 2+ períodos'}</div>
+        <div style="${S.kpiSub}">${prevP ? `${prevP} → ${lastP}` : 'Carga 2+ períodos'}</div>
       </div>
       <div style="${S.kpi}">
         <div style="${S.kpiLabel}">Local vs Extranjero</div>
