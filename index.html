@@ -3736,11 +3736,14 @@ function renderGeneral() {
     // Top movers entre períodos (requiere 2+ períodos)
     let moversBlock = '';
     if (prevPeriod) {
-      const movements = companies
-        .filter(c => c.prev > 0)
-        .map(c => ({ ...c }));
-      const winners = movements.slice().sort((a, b) => b.deltaAbs - a.deltaAbs).slice(0, 5);
-      const losers = movements.slice().sort((a, b) => a.deltaAbs - b.deltaAbs).slice(0, 5).filter(c => c.deltaAbs < 0);
+      // Diagnóstico para ayudar a identificar por qué pueden estar vacías las tablas:
+      // si no hay matches entre insLast e insPrev por RUT, los placeholders explican.
+      const insLastRuts = new Set(insLast.map(c => c.rut));
+      const insPrevRuts = new Set(insPrev.map(c => c.rust || c.rut));
+      const matchedRuts = Array.from(insLastRuts).filter(r => prevByRut.has(r));
+      const positiveMovements = companies.filter(c => c.prev > 0);
+      const winners = positiveMovements.slice().sort((a, b) => b.deltaAbs - a.deltaAbs).filter(c => c.deltaAbs > 0).slice(0, 5);
+      const losers = positiveMovements.slice().sort((a, b) => a.deltaAbs - b.deltaAbs).slice(0, 5).filter(c => c.deltaAbs < 0);
       const moveRow = c => {
         const cls = c.deltaAbs > 0 ? 'pos' : 'neg';
         return `<tr>
@@ -3749,6 +3752,18 @@ function renderGeneral() {
           <td class="num ${cls}">${c.deltaPct === null ? '—' : `${c.deltaPct > 0 ? '+' : ''}${(c.deltaPct * 100).toFixed(1)}%`}</td>
         </tr>`;
       };
+      // Log de diagnóstico para casos donde nada match
+      if (winners.length === 0 && losers.length === 0) {
+        console.warn('[Resumen General] No hay movimientos entre períodos. Diagnóstico:', {
+          lastPeriod, prevPeriod,
+          companiasUltimo: insLast.length,
+          companiasPrevio: insPrev.length,
+          matchedRuts: matchedRuts.length,
+          rutsEnUltimo: Array.from(insLastRuts),
+          rutsEnPrevio: insPrev.map(c => c.rut),
+        });
+      }
+      const emptyMsg = (txt) => `<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--c-muted);font-size:11.5px;line-height:1.5">${txt}<br><span style="font-size:10.5px">Último: ${insLast.length} cías · Anterior: ${insPrev.length} cías · Comparables: ${matchedRuts.length}</span></td></tr>`;
       moversBlock = `
         <div class="grid-2 equal-height">
           <div class="card">
@@ -3756,7 +3771,7 @@ function renderGeneral() {
             <div class="table-wrap">
               <table>
                 <thead><tr><th>Compañía</th><th class="num">Δ Val. Libro</th><th class="num">Δ %</th></tr></thead>
-                <tbody>${winners.map(moveRow).join('')}</tbody>
+                <tbody>${winners.map(moveRow).join('') || emptyMsg('Ninguna compañía creció entre estos períodos.')}</tbody>
               </table>
             </div>
           </div>
@@ -3765,7 +3780,7 @@ function renderGeneral() {
             <div class="table-wrap">
               <table>
                 <thead><tr><th>Compañía</th><th class="num">Δ Val. Libro</th><th class="num">Δ %</th></tr></thead>
-                <tbody>${losers.map(moveRow).join('') || '<tr><td colspan="3" class="empty-state">Ninguna compañía decreció</td></tr>'}</tbody>
+                <tbody>${losers.map(moveRow).join('') || emptyMsg('Ninguna compañía decreció entre estos períodos.')}</tbody>
               </table>
             </div>
           </div>
