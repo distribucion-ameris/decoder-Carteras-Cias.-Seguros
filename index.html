@@ -3589,10 +3589,14 @@ function renderGeneral() {
   // de abajo se calculan sobre `lastPeriodHs`, no sobre el agregado `hs`
   // (que sumaría todos los períodos cargados y daría números inflados).
 
-  // Cálculo de períodos cargados: si hay 2+ podemos mostrar deltas
+  // Cálculo de períodos cargados: si hay 2+ podemos mostrar deltas.
+  // Comparamos PRIMER período cargado vs ÚLTIMO (historia completa, no
+  // mes-a-mes), porque cuando hay 15+ períodos cargados el delta mensual
+  // es poco informativo — interesa ver evolución desde que empezó el
+  // seguimiento.
   const periodsLoaded = allPeriods();  // ordenados asc
   const lastPeriod = periodsLoaded[periodsLoaded.length - 1] || '—';
-  const prevPeriod = periodsLoaded.length >= 2 ? periodsLoaded[periodsLoaded.length - 2] : null;
+  const prevPeriod = periodsLoaded.length >= 2 ? periodsLoaded[0] : null;
 
   // Para "AUM último período" y "Δ vs anterior" computamos solo el último vs el anterior
   const lastPeriodHs = hs.filter(h => h._periodo === lastPeriod);
@@ -7195,7 +7199,8 @@ function _generatePdfReport() {
   const hs = activeHoldings(true);
   const periodsLoaded = allPeriods();
   const lastP = periodsLoaded[periodsLoaded.length - 1] || '—';
-  const prevP = periodsLoaded.length >= 2 ? periodsLoaded[periodsLoaded.length - 2] : null;
+  // Comparamos primer período cargado vs último (historia completa).
+  const prevP = periodsLoaded.length >= 2 ? periodsLoaded[0] : null;
   const lastHs = hs.filter(h => h._periodo === lastP);
   const prevHs = prevP ? hs.filter(h => h._periodo === prevP) : [];
   const lastSum = totalValLibro(lastHs);
