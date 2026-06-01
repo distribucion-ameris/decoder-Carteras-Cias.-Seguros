@@ -976,6 +976,106 @@
   }
   .ic-sections details { margin-top: 10px; }
   .ic-sections details:first-child { margin-top: 0; }
+
+  /* === Resumen ejecutivo (nivel 1) al expandir una tarjeta de aseguradora === */
+  .ic-summary-stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 900px) {
+    .ic-summary-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+  .ic-summary-stat {
+    background: white;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-sm);
+    padding: 10px 12px;
+  }
+  .ic-summary-label {
+    font-size: 9.5px;
+    color: var(--c-muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .ic-summary-value {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--c-ameris-navy);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .ic-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  @media (max-width: 900px) {
+    .ic-summary-grid { grid-template-columns: 1fr; }
+  }
+  .ic-summary-block {
+    background: white;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-sm);
+    padding: 12px 14px;
+  }
+  .ic-summary-block-title {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--c-ameris-navy);
+    margin-bottom: 10px;
+    letter-spacing: -.01em;
+  }
+  /* Filas de Distribución por categoría — barra horizontal compacta */
+  .ic-dist-list, .ic-agf-list { display: flex; flex-direction: column; gap: 5px; }
+  .ic-dist-row {
+    display: grid;
+    grid-template-columns: 1.4fr 1.8fr auto auto;
+    gap: 8px;
+    align-items: center;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ic-dist-name { color: var(--c-text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ic-dist-name.is-other { color: var(--c-muted); font-style: italic; }
+  .ic-dist-bar {
+    height: 6px;
+    background: var(--c-ameris-soft);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .ic-dist-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--c-ameris-cyan) 0%, var(--c-ameris-blue) 100%);
+    border-radius: 3px;
+  }
+  .ic-dist-pct { color: var(--c-ameris-blue); font-weight: 600; min-width: 36px; text-align: right; }
+  .ic-dist-val { color: var(--c-muted); min-width: 78px; text-align: right; font-size: 11px; }
+  /* Filas de Top 5 AGFs */
+  .ic-agf-row {
+    display: grid;
+    grid-template-columns: 18px 1fr auto auto auto;
+    gap: 10px;
+    align-items: center;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ic-agf-rank { color: var(--c-muted); text-align: right; font-weight: 600; }
+  .ic-agf-name { color: var(--c-text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ic-agf-funds { color: var(--c-muted); font-size: 10.5px; min-width: 60px; text-align: right; }
+  .ic-agf-pct { color: var(--c-ameris-blue); font-weight: 600; min-width: 36px; text-align: right; }
+  .ic-agf-val { color: var(--c-text); min-width: 78px; text-align: right; }
+  .ic-agf-row.is-other { color: var(--c-muted); font-style: italic; padding-top: 4px; border-top: 1px dashed var(--c-border); }
+  .ic-agf-row.is-other .ic-agf-name,
+  .ic-agf-row.is-other .ic-agf-val { color: var(--c-muted); }
+  /* Botón expander del nivel 2 */
+  .ic-detail-expander { margin-top: 4px; }
+  .ic-detail-expander .btn-action.open::after { content: " ▲"; opacity: .85; }
+  .ic-detail-expander .btn-action:not(.open)::after { content: " ▼"; opacity: .85; }
   /* Clickable rows in the B.5 per-insurer summary table */
   tr.b5-insurer-row:hover { background: #f5f3ff !important; }
   tr.b5-insurer-row td { transition: background .15s ease; }
@@ -4329,7 +4429,9 @@ function renderInsurer() {
 }
 
 // Genera el HTML del cuerpo expandido de una tarjeta de aseguradora.
-// Reutiliza renderInsurerByCategory / renderInsurerByAGF según el modo activo.
+// Vista en 2 niveles (progressive disclosure):
+//  - Nivel 1: resumen ejecutivo (métricas + distribución categoría + top AGFs)
+//  - Nivel 2: detalle completo (toggle + filtro + tablas) — colapsado por defecto
 function renderInsurerCardBody(rut) {
   const hs = activeHoldings();
   const recs = hs.filter(h => h._insurerRut === rut);
@@ -4341,18 +4443,28 @@ function renderInsurerCardBody(rut) {
   const lastRecs = recs.filter(r => r._periodo === lastP);
   const totLibro = lastRecs.reduce((s, h) => s + h.valLibro, 0);
 
+  // === Resumen ejecutivo: agregados rápidos del último período ===
+  const fundsCount = new Set(lastRecs.map(h => h.nemo + '||' + (h.serie || ''))).size;
+  const positionsCount = lastRecs.length;
+
   // AGFs presentes en esta compañía (último período)
   const agfsForFilter = (() => {
     const m = new Map();
     for (const h of lastRecs) {
       const cr = canonicalAgfRut(h.rutEmisor);
       const name = canonicalAgfName(h.rutEmisor);
-      const cur = m.get(cr) || { rut: cr, name, valor: 0 };
+      const cur = m.get(cr) || { rut: cr, name, valor: 0, fondos: new Set() };
       cur.valor += h.valLibro || 0;
+      cur.fondos.add(h.nemo);
       m.set(cr, cur);
     }
     return Array.from(m.values()).sort((a, b) => b.valor - a.valor);
   })();
+
+  // Distribución por categoría
+  const catTotals = {};
+  for (const h of lastRecs) catTotals[h.category] = (catTotals[h.category] || 0) + h.valLibro;
+  const catSorted = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
 
   let recsFiltered = recs;
   if (INSURER_AGF_FILTER) {
@@ -4375,7 +4487,74 @@ function renderInsurerCardBody(rut) {
     ? renderInsurerByAGF(recsFiltered, lastP, agfsForFilter, totLibro)
     : renderInsurerByCategory(recsFiltered, lastP);
 
-  // Wire los controles tras el render usando setTimeout (innerHTML llega después)
+  // === HTML del resumen ejecutivo (nivel 1, siempre visible) ===
+  const summaryStats = `
+    <div class="ic-summary-stats">
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Val. Libro</div>
+        <div class="ic-summary-value" style="color:var(--c-ameris-blue)">${fmtMoney(totLibro)}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">AGFs</div>
+        <div class="ic-summary-value">${agfsForFilter.length}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Fondos distintos</div>
+        <div class="ic-summary-value">${fundsCount}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Posiciones</div>
+        <div class="ic-summary-value">${positionsCount}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Período</div>
+        <div class="ic-summary-value" style="font-size:14px">${fmtPeriod(lastP)}</div>
+      </div>
+    </div>
+  `;
+
+  // Distribución por categoría con barra visual (top 6 + "Otros")
+  const top6Cats = catSorted.slice(0, 6);
+  const otherSum = catSorted.slice(6).reduce((s, [, v]) => s + v, 0);
+  const catRows = [
+    ...top6Cats.map(([cat, v]) => ({ cat, v })),
+    ...(otherSum > 0 ? [{ cat: `Otros (${catSorted.length - 6})`, v: otherSum, isOther: true }] : []),
+  ].map(({ cat, v, isOther }) => {
+    const pct = totLibro > 0 ? v / totLibro * 100 : 0;
+    return `
+      <div class="ic-dist-row">
+        <span class="ic-dist-name${isOther ? ' is-other' : ''}">${escapeHtml(cat)}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(v)}</span>
+      </div>
+    `;
+  }).join('');
+
+  // Top 5 AGFs (resumen)
+  const top5Agfs = agfsForFilter.slice(0, 5);
+  const otherAgfsSum = agfsForFilter.slice(5).reduce((s, a) => s + a.valor, 0);
+  const agfRows = top5Agfs.map((a, i) => {
+    const pct = totLibro > 0 ? a.valor / totLibro * 100 : 0;
+    return `
+      <div class="ic-agf-row">
+        <span class="ic-agf-rank">${i + 1}</span>
+        <span class="ic-agf-name">${escapeHtml(a.name)}</span>
+        <span class="ic-agf-funds">${a.fondos.size} fondo${a.fondos.size !== 1 ? 's' : ''}</span>
+        <span class="ic-agf-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-agf-val">${fmtMoney(a.valor)}</span>
+      </div>
+    `;
+  }).join('') + (otherAgfsSum > 0 ? `
+    <div class="ic-agf-row is-other">
+      <span class="ic-agf-rank"></span>
+      <span class="ic-agf-name">+ ${agfsForFilter.length - 5} AGFs más</span>
+      <span class="ic-agf-funds"></span>
+      <span class="ic-agf-pct">${(otherAgfsSum / totLibro * 100).toFixed(1)}%</span>
+      <span class="ic-agf-val">${fmtMoney(otherAgfsSum)}</span>
+    </div>` : '');
+
+  // Wire controles del nivel 2 (toggle, filtro, expand button) tras innerHTML
   setTimeout(() => {
     document.querySelectorAll('.ic-vt-btn[data-mode]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -4394,29 +4573,61 @@ function renderInsurerCardBody(rut) {
         renderInsurer();
       });
     }
+    // Toggle del detalle completo (nivel 2)
+    const detailBtn = document.getElementById('ic-show-detail-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
+    const detailContainer = document.getElementById('ic-detail-container-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
+    if (detailBtn && detailContainer) {
+      detailBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = detailContainer.style.display !== 'none';
+        detailContainer.style.display = open ? 'none' : 'block';
+        detailBtn.textContent = open ? 'Ver detalle de fondos' : 'Ocultar detalle';
+        detailBtn.classList.toggle('open', !open);
+      });
+    }
   }, 0);
+
+  const safeId = rut.replace(/[^A-Za-z0-9-]/g, '_');
 
   return `
     <div class="ic-body-inner" onclick="event.stopPropagation()">
-      <div class="ic-controls">
-        <div class="view-toggle" role="tablist">
-          <button type="button" class="vt-btn ic-vt-btn ${INSURER_VIEW_MODE === 'category' ? 'active' : ''}" data-mode="category">Por categoría</button>
-          <button type="button" class="vt-btn ic-vt-btn ${INSURER_VIEW_MODE === 'agf' ? 'active' : ''}" data-mode="agf">Por AGF</button>
+      ${summaryStats}
+      <div class="ic-summary-grid">
+        <div class="ic-summary-block">
+          <div class="ic-summary-block-title">Distribución por categoría</div>
+          <div class="ic-dist-list">${catRows}</div>
         </div>
-        <div class="ic-filter-agf">
-          <span class="ctrl-label">Filtrar AGF:</span>
-          <select id="ic-agf-filter-${rut.replace(/[^A-Za-z0-9-]/g, '_')}">
-            <option value="">Todas (${agfsForFilter.length})</option>
-            ${agfFilterOptions}
-          </select>
-        </div>
-        <div class="ic-meta">
-          ${periodsLabel} · <strong style="color:var(--c-ameris-blue)">${fmtMoney(totLibro)}</strong>
-          ${INSURER_AGF_FILTER ? ` · <span style="color:var(--c-ameris-blue)">${escapeHtml(filterAgfName)}</span>` : ''}
+        <div class="ic-summary-block">
+          <div class="ic-summary-block-title">Top 5 AGFs · ${fmtPeriod(lastP)}</div>
+          <div class="ic-agf-list">${agfRows}</div>
         </div>
       </div>
-      <div class="ic-sections">
-        ${bodySections}
+
+      <div class="ic-detail-expander">
+        <button type="button" class="btn btn-action" id="ic-show-detail-${safeId}" style="width:100%;padding:9px;font-size:12.5px">Ver detalle de fondos</button>
+      </div>
+
+      <div id="ic-detail-container-${safeId}" style="display:none;margin-top:14px">
+        <div class="ic-controls">
+          <div class="view-toggle" role="tablist">
+            <button type="button" class="vt-btn ic-vt-btn ${INSURER_VIEW_MODE === 'category' ? 'active' : ''}" data-mode="category">Por categoría</button>
+            <button type="button" class="vt-btn ic-vt-btn ${INSURER_VIEW_MODE === 'agf' ? 'active' : ''}" data-mode="agf">Por AGF</button>
+          </div>
+          <div class="ic-filter-agf">
+            <span class="ctrl-label">Filtrar AGF:</span>
+            <select id="ic-agf-filter-${safeId}">
+              <option value="">Todas (${agfsForFilter.length})</option>
+              ${agfFilterOptions}
+            </select>
+          </div>
+          <div class="ic-meta">
+            ${periodsLabel}
+            ${INSURER_AGF_FILTER ? ` · <span style="color:var(--c-ameris-blue)">${escapeHtml(filterAgfName)}</span>` : ''}
+          </div>
+        </div>
+        <div class="ic-sections">
+          ${bodySections}
+        </div>
       </div>
     </div>
   `;
