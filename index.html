@@ -2842,13 +2842,16 @@ async function loadState() {
    FILTERED DATA ACCESSORS
    ======================================================================= */
 
-function activeFiles() {
-  if (!STATE.selectedPeriod) return STATE.files;
+// `ignoreFilters=true` saltea STATE.selectedPeriod y STATE.agfFilter
+// — usado por vistas macro (Resumen General) que necesitan comparar
+// últimos 2 períodos y ver todas las AGFs.
+function activeFiles(ignoreFilters = false) {
+  if (ignoreFilters || !STATE.selectedPeriod) return STATE.files;
   return STATE.files.filter(f => f.periodo === STATE.selectedPeriod);
 }
 
-function activeFilesB2() { return activeFiles().filter(f => (f.fileType || 'b2') === 'b2'); }
-function activeFilesB5() { return activeFiles().filter(f => f.fileType === 'b5'); }
+function activeFilesB2(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => (f.fileType || 'b2') === 'b2'); }
+function activeFilesB5(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b5'); }
 
 // Vista unificada del dashboard: cuotas de fondos de inversión (CFI), tanto
 // nacionales (B.2) como administradas por AGFs chilenas con activos en el
@@ -2856,13 +2859,13 @@ function activeFilesB5() { return activeFiles().filter(f => f.fileType === 'b5')
 // (B.5 deuda) se excluyen porque el dashboard se enfoca en el negocio AGF
 // (cuotas) — Ameris no necesita ver acciones individuales y los bonos
 // extranjeros son del libro de la aseguradora, no de una AGF.
-function activeHoldings() {
-  const agfF = STATE.agfFilter;
+function activeHoldings(ignoreFilters = false) {
+  const agfF = ignoreFilters ? '' : STATE.agfFilter;
   const onlyRut = agfF.startsWith('rut:') ? agfF.slice(4) : null;
   const out = [];
 
   // B.2 — solo CFI (sin acciones)
-  for (const f of activeFilesB2()) {
+  for (const f of activeFilesB2(ignoreFilters)) {
     for (const h of (f.holdings || [])) {
       if (!h.tipoInst.startsWith('CFI')) continue;
       if (agfF === 'ameris' && !isAmerisRut(h.rutEmisor)) continue;
@@ -2879,7 +2882,7 @@ function activeHoldings() {
 
   // B.5 cuotas — solo cuotas administradas por AGFs (rutAdm presente o nemo CFI*)
   // Normalizamos el schema al de B.2: valLibro ← valorFinal, rutEmisor ← rutAdm
-  for (const f of activeFilesB5()) {
+  for (const f of activeFilesB5(ignoreFilters)) {
     for (const r of (f.b5Records || [])) {
       if (r._subtype !== 'cuota') continue;
       // Solo cuotas administradas por una AGF chilena (con RUT). Las cuotas de
@@ -3561,7 +3564,10 @@ function emptyStateB2Only(tabName) {
 /* ---- General overview ---- */
 
 function renderGeneral() {
-  const hs = activeHoldings();
+  // Vista macro: ignorar filtros de período/AGF para poder comparar deltas
+  // entre el último y el penúltimo período cargados (de lo contrario
+  // prevPeriodHs queda vacío y las tablas de movers no muestran nada).
+  const hs = activeHoldings(true);
   const container = document.getElementById('general-content');
   if (STATE.files.length === 0) {
     container.innerHTML = emptyState('Carga archivos B.2 (cartera local) o B.5 (extranjero) desde la CMF para comenzar.');
@@ -7170,7 +7176,8 @@ function _generatePdfReport() {
   };
 
   // === Recomputar datos ===
-  const hs = activeHoldings();
+  // Ignorar filtros (vista macro siempre vs los últimos 2 períodos cargados).
+  const hs = activeHoldings(true);
   const periodsLoaded = allPeriods();
   const lastP = periodsLoaded[periodsLoaded.length - 1] || '—';
   const prevP = periodsLoaded.length >= 2 ? periodsLoaded[periodsLoaded.length - 2] : null;
