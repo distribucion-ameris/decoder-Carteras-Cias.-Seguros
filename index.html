@@ -1728,6 +1728,7 @@
       <input type="file" id="btn-add-files-input" multiple style="display:none">
       <span class="ab-divider"></span>
       <button class="btn btn-secondary" type="button" id="btn-quality" title="Auditoría de los datos cargados: nemos sin nombre, AGFs no mapeadas, posibles truncamientos y conflictos">Calidad de datos<span id="quality-badge" style="display:none;margin-left:6px;padding:1px 7px;border-radius:9px;background:#0891b2;color:white;font-size:10.5px;font-weight:700;line-height:14px;vertical-align:1px"></span></button>
+      <button class="btn btn-secondary" type="button" id="btn-export-historico" title="Descarga un JSON con todos los archivos cargados. Subilo al repo como Dashboard/historico-compartido.json y todos los usuarios lo recibirán automáticamente al recargar.">Exportar histórico</button>
       <button class="btn btn-secondary" type="button" id="btn-export-pdf" title="Generar PDF del Resumen General (usa la función Imprimir del navegador → Guardar como PDF)">PDF del Resumen</button>
       <button class="btn btn-secondary" type="button" id="btn-export-csv" title="Descarga los datos visibles como archivo CSV (compatible con Excel)">Exportar CSV</button>
       <button class="btn btn-secondary" type="button" id="btn-clear" title="Borra todos los archivos cargados del historial (acción no reversible)">Limpiar datos</button>
@@ -2382,6 +2383,66 @@ let USER_OVERRIDES = loadUserOverrides();
 // admin integra a community_overrides.json → push → todos reciben.
 let COMMUNITY_OVERRIDES = { nemoNames: {}, rutAgfs: {}, rutMismatchIgnore: [] };
 
+// === Histórico compartido (admin pre-carga, todos lo reciben) ===
+// El admin carga sus archivos B.2/B.5, exporta un JSON con todo el estado y
+// lo sube al repo como Dashboard/historico-compartido.json. Cuando otros
+// usuarios abren el dashboard, este JSON se descarga automáticamente y los
+// archivos quedan disponibles SIN necesidad de cargar nada. Es el mismo
+// patrón que community_overrides.json pero con archivos en vez de overrides.
+let SHARED_HISTORICO_LOADED = false;
+async function loadSharedHistorico() {
+  try {
+    const v = new Date().toISOString().slice(0, 10);  // cache buster por día
+    const resp = await fetch(`historico-compartido.json?v=${v}`);
+    if (!resp.ok) {
+      console.log('No hay histórico compartido en el repo (es normal si no se subió).');
+      return;
+    }
+    const data = await resp.json();
+    if (!data || !Array.isArray(data.files)) return;
+    let added = 0;
+    for (const sharedFile of data.files) {
+      // Re-hidratar B.5 records si vienen slim (necesario porque B.5 records
+      // se guardan compactos para ahorrar espacio).
+      if (Array.isArray(sharedFile.b5Records)) {
+        sharedFile.b5Records = sharedFile.b5Records.map(r => {
+          if (r && r._s) return rehydrateB5Record(r);
+          return r;
+        });
+      }
+      // Re-aplicar resolveAgf / friendlyForNemo (mapas cliente pueden haber
+      // cambiado desde que se exportó el JSON).
+      if (Array.isArray(sharedFile.holdings)) {
+        for (const h of sharedFile.holdings) {
+          const agfInfo = resolveAgf(h);
+          h.agf = agfInfo.name;
+          h.agfSource = agfInfo.source;
+          h.agfMismatch = agfInfo.mismatch;
+          h.agfFromRut = agfInfo.rutMappingName;
+          h.nemoFriendly = friendlyForNemo(h.nemo);
+        }
+      }
+      sharedFile._source = 'shared';
+      // Dedupe contra STATE.files: si ya hay un archivo local con misma key
+      // (mismo RUT + período + tipo), el local manda (puede ser más reciente).
+      const idx = STATE.files.findIndex(f =>
+        f.insurerRut === sharedFile.insurerRut &&
+        f.periodo === sharedFile.periodo &&
+        (f.fileType || 'b2') === (sharedFile.fileType || 'b2'));
+      if (idx < 0) {
+        STATE.files.push(sharedFile);
+        added++;
+      }
+    }
+    SHARED_HISTORICO_LOADED = true;
+    if (added > 0) {
+      console.log(`Histórico compartido cargado: ${added} archivos del repo central.`);
+    }
+  } catch (e) {
+    console.warn('No se pudo cargar historico-compartido.json:', e);
+  }
+}
+
 async function loadCommunityOverrides() {
   try {
     // Cache buster: usar timestamp del día para forzar refresh diario sin
@@ -2643,6 +2704,9 @@ function _openIDB() {
 }
 
 async function _idbSaveAll(files) {
+  // Filtrar archivos compartidos: vienen del repo y se recargan al iniciar,
+  // no tiene sentido duplicarlos en IndexedDB local de cada usuario.
+  files = files.filter(f => f._source !== 'shared');
   const db = await _openIDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite');
@@ -7133,6 +7197,55 @@ function setupControls() {
     });
   }
 
+  // Botón "Exportar histórico para compartir": descarga un JSON con todos
+  // los archivos cargados (locales + shared). El admin lo sube al repo
+  // como Dashboard/historico-compartido.json y todos los usuarios reciben
+  // el histórico automáticamente al recargar el dashboard.
+  const btnExportHist = document.getElementById('btn-export-historico');
+  if (btnExportHist) {
+    btnExportHist.addEventListener('click', () => {
+      if (STATE.files.length === 0) {
+        alert('No hay archivos cargados para exportar.');
+        return;
+      }
+      // Construir el JSON con todos los files (slim B.5 para que pese menos).
+      const slimFiles = STATE.files.map(f => ({
+        fileType: f.fileType || 'b2',
+        fileName: f.fileName,
+        insurerRut: f.insurerRut,
+        insurerName: f.insurerName,
+        periodo: f.periodo,
+        holdings: f.holdings,
+        b5Records: f.b5Records ? f.b5Records.map(slimB5Record) : undefined,
+        b5BienesRaicesCount: f.b5BienesRaicesCount,
+        b5FilialesCount: f.b5FilialesCount,
+      }));
+      const payload = {
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        files: slimFiles,
+      };
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'historico-compartido.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
+      showSuccessToast(`Histórico exportado (${slimFiles.length} archivos, ${sizeMB} MB)`);
+      setTimeout(() => alert(
+        `Histórico exportado: ${slimFiles.length} archivos · ${sizeMB} MB.\n\n` +
+        `PARA COMPARTIRLO CON TODOS LOS USUARIOS:\n` +
+        `1. Sube el archivo descargado al repositorio en la carpeta Dashboard/, ` +
+        `con el nombre exacto: historico-compartido.json\n` +
+        `2. Haz commit y push.\n` +
+        `3. Al día siguiente (o al recargar con Ctrl+Shift+R), todos los usuarios ` +
+        `verán el histórico cargado automáticamente — sin necesidad de subir archivos.`
+      ), 120);
+    });
+  }
+
   document.getElementById('btn-clear').addEventListener('click', async () => {
     if (!confirm('¿Borrar todos los archivos cargados? Esta acción no se puede deshacer.')) return;
     STATE.files = [];
@@ -8208,10 +8321,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupTabs();
   setupDropzone();
   setupControls();
-  // Cargar correcciones comunitarias (no bloqueante para UX; si el fetch
-  // tarda, primero se renderiza y luego se re-renderiza al llegar).
   renderAll();
-  await loadCommunityOverrides();
+  // En paralelo: histórico compartido (admin lo sube al repo, todos lo
+  // reciben) + correcciones comunitarias. Cuando lleguen, re-render.
+  await Promise.all([
+    loadSharedHistorico(),
+    loadCommunityOverrides(),
+  ]);
   renderAll();
 });
 
