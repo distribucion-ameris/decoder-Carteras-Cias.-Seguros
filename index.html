@@ -1071,6 +1071,8 @@
   }
   .insurer-card:hover { border-color: var(--c-ameris-cyan); box-shadow: var(--shadow-md); }
   .insurer-card.open { border-color: var(--c-ameris-blue); box-shadow: var(--shadow-md); }
+  /* Resalta cards de Ameris en Por AGF (mismo tinte que tabla anterior) */
+  .insurer-card.is-ameris { border-left: 3px solid var(--c-ameris-blue); background: linear-gradient(90deg, var(--c-ameris-soft) 0%, white 240px); }
   .insurer-card-head {
     display: grid;
     grid-template-columns: minmax(280px, 2fr) auto 2fr;
@@ -4613,6 +4615,10 @@ function agfBreakdown(holdings, rutEmisor) {
   return Array.from(byFund.values()).sort((a, b) => b.totalLibro - a.totalLibro);
 }
 
+// Estado: qué AGF está expandida + búsqueda. Mismo patrón que Por Compañía.
+let AGF_OPEN_RUT = '';
+let AGF_SEARCH = '';
+
 function renderAGF() {
   const hs = activeHoldings();
   const container = document.getElementById('agf-content');
@@ -4622,76 +4628,243 @@ function renderAGF() {
   }
 
   const list = aggregateByAGF(hs);
-  const totalLibro = list.reduce((s, a) => s + a.valLibro, 0) || 1;
+  const totalSys = list.reduce((s, a) => s + a.valLibro, 0) || 1;
   if (list.length === 0) {
     container.innerHTML = emptyState('No hay registros CFI en el período seleccionado.');
     return;
   }
 
-  const rows = list.map((a, i) => {
-    const pct = a.valLibro / totalLibro * 100;
+  // Búsqueda por nombre o RUT
+  const q = AGF_SEARCH.trim().toLowerCase();
+  const filtered = q
+    ? list.filter(a => (a.agf || '').toLowerCase().includes(q) || (a.rut || '').includes(q))
+    : list;
+
+  // Cards (mismo patrón que insurer-card)
+  const cards = filtered.map(a => {
+    const isOpen = a.rut === AGF_OPEN_RUT;
+    const pct = a.valLibro / totalSys * 100;
     const isAmeris = isAmerisRut(a.rut);
     return `
-      <tr ${isAmeris ? 'style="background:var(--c-accent-soft)"' : ''} class="agf-row" data-rut="${a.rut}">
-        <td>${i+1}</td>
-        <td>
-          <strong>${escapeHtml(a.agf)}</strong>${isAmeris ? ' <span class="badge cfi">Ameris</span>' : ''}<br>
-          <span style="color:var(--c-muted);font-size:11px">RUT ${fmtRut(a.rut)}</span>
-        </td>
-        <td class="num">${a.fundsCount}</td>
-        <td class="num">${a.insurersCount}</td>
-        <td class="num">${a.positions}</td>
-        <td class="num">${fmtMoney(a.valLibro)}</td>
-        <td><div class="cell-bar"><div class="bar"><div class="fill" style="width:${pct.toFixed(1)}%"></div></div><span class="num">${pct.toFixed(1)}%</span></div></td>
-        <td><button class="btn btn-secondary btn-drill" data-rut="${a.rut}" type="button">Ver desglose</button></td>
-      </tr>
-      <tr class="agf-detail-row" data-rut="${a.rut}" style="display:none"><td colspan="8" id="agf-detail-${a.rut.replace(/[^A-Za-z0-9-]/g,'_')}"></td></tr>
+      <div class="insurer-card ${isOpen ? 'open' : ''}${isAmeris ? ' is-ameris' : ''}" data-rut="${a.rut}">
+        <div class="insurer-card-head" data-rut="${a.rut}">
+          <div class="ic-name">
+            <span class="ic-chevron">▶</span>
+            <div>
+              <strong>${escapeHtml(a.agf)}</strong>${isAmeris ? ' <span class="badge cfi" style="margin-left:6px">Ameris</span>' : ''}
+              <div class="ic-sub">RUT ${fmtRut(a.rut)} · ${a.fundsCount} fondo${a.fundsCount !== 1 ? 's' : ''} · ${a.insurersCount} cía${a.insurersCount !== 1 ? 's' : ''} · ${a.positions} posiciones</div>
+            </div>
+          </div>
+          <div class="ic-stats">
+            <div class="ic-stat-val">${fmtMoney(a.valLibro)}</div>
+            <div class="ic-stat-pct">${pct.toFixed(2)}% sistema</div>
+          </div>
+          <div class="ic-cats">
+            <span class="ic-cat-chip">${a.fundsCount} fondos</span>
+            <span class="ic-cat-chip">${a.insurersCount} clientes</span>
+          </div>
+        </div>
+        <div class="insurer-card-body" id="agf-body-${a.rut.replace(/[^A-Za-z0-9-]/g, '_')}">
+          ${isOpen ? renderAGFCardBody(a.rut, hs) : ''}
+        </div>
+      </div>
     `;
   }).join('');
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Por AGF</strong> · Ranking de administradoras por Val. Libro total. Click en <strong>"Ver desglose"</strong> para ver fondos y compañías cliente. Filas con tinte azul = Ameris.
+      <strong>Por AGF / Emisor</strong> · Click en una tarjeta para ver fondos administrados, compañías clientes y distribución. Filas con tinte azul = Ameris.
     </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">${list.length} AGFs con presencia en CFI</div></div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>AGF / Emisor</th>
-              <th class="num">Fondos</th>
-              <th class="num">Cías.</th>
-              <th class="num">Posiciones</th>
-              <th class="num">Val. Libro</th>
-              <th>% del total</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
+    <div class="insurer-toolbar">
+      <input type="search" id="agf-search" placeholder="🔍 Buscar AGF por nombre o RUT…" value="${escapeHtml(AGF_SEARCH)}">
+      <span class="insurer-counter">${filtered.length} de ${list.length} AGFs</span>
+    </div>
+    <div class="insurer-cards" id="agf-cards">
+      ${cards || '<div class="empty-state" style="padding:20px">Sin coincidencias para la búsqueda.</div>'}
+    </div>
+  `;
+
+  // Wire search
+  const searchEl = document.getElementById('agf-search');
+  let searchDebounce;
+  if (searchEl) {
+    searchEl.addEventListener('input', (e) => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        AGF_SEARCH = e.target.value;
+        renderAGF();
+        const ne = document.getElementById('agf-search');
+        if (ne) { ne.focus(); ne.setSelectionRange(ne.value.length, ne.value.length); }
+      }, 120);
+    });
+  }
+
+  // Wire card-head clicks → toggle expansion (solo una abierta a la vez)
+  container.querySelectorAll('#agf-cards .insurer-card-head').forEach(head => {
+    head.addEventListener('click', () => {
+      const rut = head.dataset.rut;
+      AGF_OPEN_RUT = (AGF_OPEN_RUT === rut) ? '' : rut;
+      renderAGF();
+    });
+  });
+}
+
+// Cuerpo expandido de una tarjeta de AGF (mismo patrón que renderInsurerCardBody).
+// Nivel 1: resumen ejecutivo (KPIs + Top categorías + Top 5 cías clientes).
+// Nivel 2: tablas detalladas de fondos (colapsado por defecto, on-demand).
+function renderAGFCardBody(rut, hs) {
+  // Solo las posiciones de esta AGF (canonicalizadas)
+  const recsAll = hs.filter(h => canonicalAgfRut(h.rutEmisor) === canonicalAgfRut(rut));
+  if (recsAll.length === 0) {
+    return `<div class="empty-state" style="padding:20px">Sin posiciones para esta AGF en el período seleccionado.</div>`;
+  }
+  const periodsHere = Array.from(new Set(recsAll.map(r => r._periodo))).sort();
+  const lastP = periodsHere[periodsHere.length - 1];
+  const lastRecs = recsAll.filter(r => r._periodo === lastP);
+  const totLibro = lastRecs.reduce((s, h) => s + h.valLibro, 0);
+  const fundsCount = new Set(lastRecs.map(h => h.nemo + '||' + (h.serie || ''))).size;
+  const positionsCount = lastRecs.length;
+
+  // Compañías clientes (último período)
+  const insurerMap = new Map();
+  for (const h of lastRecs) {
+    const k = h._insurerRut;
+    if (!k) continue;
+    const cur = insurerMap.get(k) || { rut: k, name: h._insurerName, valor: 0, fondos: new Set() };
+    cur.valor += h.valLibro || 0;
+    cur.fondos.add(h.nemo);
+    insurerMap.set(k, cur);
+  }
+  const insurersList = Array.from(insurerMap.values()).sort((a, b) => b.valor - a.valor);
+
+  // Distribución por categoría
+  const catTotals = {};
+  for (const h of lastRecs) catTotals[h.category] = (catTotals[h.category] || 0) + h.valLibro;
+  const catSorted = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
+
+  const periodsLabel = periodsHere.length > 1
+    ? `${fmtPeriod(periodsHere[0])} → ${fmtPeriod(lastP)} (${periodsHere.length} períodos)`
+    : fmtPeriod(lastP);
+
+  // === HTML del resumen ejecutivo (nivel 1) ===
+  const summaryStats = `
+    <div class="ic-summary-stats">
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Val. Libro</div>
+        <div class="ic-summary-value" style="color:var(--c-ameris-blue)">${fmtMoney(totLibro)}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Cías. clientes</div>
+        <div class="ic-summary-value">${insurersList.length}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Fondos distintos</div>
+        <div class="ic-summary-value">${fundsCount}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Posiciones</div>
+        <div class="ic-summary-value">${positionsCount}</div>
+      </div>
+      <div class="ic-summary-stat">
+        <div class="ic-summary-label">Período</div>
+        <div class="ic-summary-value" style="font-size:14px">${fmtPeriod(lastP)}</div>
       </div>
     </div>
   `;
 
-  // Wire drill-down buttons
-  container.querySelectorAll('.btn-drill').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const rut = btn.dataset.rut;
-      const detailRow = container.querySelector(`tr.agf-detail-row[data-rut="${rut}"]`);
-      if (!detailRow) return;
-      const isOpen = detailRow.style.display !== 'none';
-      // Close all others
-      container.querySelectorAll('tr.agf-detail-row').forEach(r => r.style.display = 'none');
-      container.querySelectorAll('.btn-drill').forEach(b => b.textContent = 'Ver desglose');
-      if (!isOpen) {
-        detailRow.style.display = '';
-        btn.textContent = 'Ocultar';
-        renderAGFDetail(rut, hs);
-      }
-    });
-  });
+  // Distribución por categoría (top 6 + Otros)
+  const top6Cats = catSorted.slice(0, 6);
+  const otherSum = catSorted.slice(6).reduce((s, [, v]) => s + v, 0);
+  const catRows = [
+    ...top6Cats.map(([cat, v]) => ({ cat, v })),
+    ...(otherSum > 0 ? [{ cat: `Otros (${catSorted.length - 6})`, v: otherSum, isOther: true }] : []),
+  ].map(({ cat, v, isOther }) => {
+    const pct = totLibro > 0 ? v / totLibro * 100 : 0;
+    return `
+      <div class="ic-dist-row">
+        <span class="ic-dist-name${isOther ? ' is-other' : ''}">${escapeHtml(cat)}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(v)}</span>
+      </div>
+    `;
+  }).join('');
+
+  // Top 5 compañías clientes
+  const top5Ins = insurersList.slice(0, 5);
+  const otherInsSum = insurersList.slice(5).reduce((s, i) => s + i.valor, 0);
+  const insRows = top5Ins.map((i, idx) => {
+    const pct = totLibro > 0 ? i.valor / totLibro * 100 : 0;
+    return `
+      <div class="ic-agf-row">
+        <span class="ic-agf-rank">${idx + 1}</span>
+        <span class="ic-agf-name">${escapeHtml(i.name)}</span>
+        <span class="ic-agf-funds">${i.fondos.size} fondo${i.fondos.size !== 1 ? 's' : ''}</span>
+        <span class="ic-agf-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-agf-val">${fmtMoney(i.valor)}</span>
+      </div>
+    `;
+  }).join('') + (otherInsSum > 0 ? `
+    <div class="ic-agf-row is-other">
+      <span class="ic-agf-rank"></span>
+      <span class="ic-agf-name">+ ${insurersList.length - 5} compañías más</span>
+      <span class="ic-agf-funds"></span>
+      <span class="ic-agf-pct">${(otherInsSum / totLibro * 100).toFixed(1)}%</span>
+      <span class="ic-agf-val">${fmtMoney(otherInsSum)}</span>
+    </div>` : '');
+
+  const safeId = rut.replace(/[^A-Za-z0-9-]/g, '_');
+
+  // Wire del botón expander tras innerHTML
+  setTimeout(() => {
+    const detailBtn = document.getElementById('agf-show-detail-' + safeId);
+    const detailContainer = document.getElementById('agf-detail-container-' + safeId);
+    if (detailBtn && detailContainer) {
+      detailBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = detailContainer.style.display !== 'none';
+        if (open) {
+          detailContainer.style.display = 'none';
+          detailBtn.textContent = 'Ver detalle de fondos';
+          detailBtn.classList.remove('open');
+        } else {
+          detailContainer.style.display = 'block';
+          // Renderizar el detalle solo cuando se abre por primera vez
+          if (!detailContainer.dataset.rendered) {
+            renderAGFDetail(rut, hs);
+            detailContainer.dataset.rendered = '1';
+          }
+          detailBtn.textContent = 'Ocultar detalle';
+          detailBtn.classList.add('open');
+        }
+      });
+    }
+  }, 0);
+
+  return `
+    <div class="ic-body-inner" onclick="event.stopPropagation()">
+      ${summaryStats}
+      <div class="ic-summary-grid">
+        <div class="ic-summary-block">
+          <div class="ic-summary-block-title">Distribución por categoría</div>
+          <div class="ic-dist-list">${catRows}</div>
+        </div>
+        <div class="ic-summary-block">
+          <div class="ic-summary-block-title">Top 5 compañías clientes · ${fmtPeriod(lastP)}</div>
+          <div class="ic-agf-list">${insRows}</div>
+        </div>
+      </div>
+
+      <div class="ic-detail-expander">
+        <button type="button" class="btn btn-action" id="agf-show-detail-${safeId}" style="width:100%;padding:9px;font-size:12.5px">Ver detalle de fondos</button>
+      </div>
+
+      <div id="agf-detail-container-${safeId}" style="display:none;margin-top:14px">
+        <div style="color:var(--c-muted);font-size:11px;margin-bottom:10px">${periodsLabel}</div>
+        <div id="agf-detail-${safeId}"></div>
+      </div>
+    </div>
+  `;
 }
 
 function renderAGFDetail(rut, hs) {
