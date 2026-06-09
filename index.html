@@ -7124,7 +7124,17 @@ function renderPulsoAmeris() {
   // deseleccionó el período más reciente, ese no debe usarse como 'último'.
   const allP = activePeriods();
   const lastP = allP[allP.length - 1];
-  const lastCFI = allCFI.filter(h => h._periodo === lastP);
+  // Para cada aseguradora, usar su último período disponible (no forzar lastP
+  // global). Los archivos CMF se entregan con desfase entre cías., y exigir
+  // que TODAS hayan presentado el último mes hace que el conteo de clientes
+  // colapse a las pocas cías. que ya presentaron. Esto da una foto consolidada
+  // "última versión de cada aseguradora", que es lo operativamente útil.
+  const latestPerInsurer = new Map();
+  for (const h of allCFI) {
+    const cur = latestPerInsurer.get(h._insurerRut);
+    if (!cur || h._periodo > cur) latestPerInsurer.set(h._insurerRut, h._periodo);
+  }
+  const lastCFI = allCFI.filter(h => latestPerInsurer.get(h._insurerRut) === h._periodo);
   const totalSysLast = lastCFI.reduce((s, h) => s + h.valLibro, 0);
 
   // Aggregate by canonical AGF para el ranking
@@ -7356,10 +7366,11 @@ function renderPulsoAmeris() {
     aum: {
       titulo: 'AUM Ameris en seguros',
       contenido: `
-        <p><b>¿Qué es?</b> El monto total que las compañías de seguros chilenas tienen invertido en fondos administrados por Ameris AGF en el período más reciente cargado (${fmtPeriod(lastP)}).</p>
-        <p><b>¿Cómo se calcula?</b> Sumamos el campo <code>VALOR_LIBRO</code> de todas las posiciones CFI* cuyo RUT de administradora corresponde a Ameris (o cualquiera de sus entidades canónicas).</p>
+        <p><b>¿Qué es?</b> El monto total que las compañías de seguros chilenas tienen invertido en fondos administrados por Ameris AGF, considerando para cada aseguradora su <b>última presentación B.2 disponible</b> dentro de los períodos seleccionados (el más reciente cargado es ${fmtPeriod(lastP)}).</p>
+        <p><b>¿Cómo se calcula?</b> Sumamos el campo <code>VALOR_LIBRO</code> de todas las posiciones CFI* cuyo RUT de administradora corresponde a Ameris (o cualquiera de sus entidades canónicas). Cada aseguradora aporta su última foto, no se les exige haber presentado el mes más reciente.</p>
         <p><b>¿Por qué importa?</b> Es el tamaño absoluto del negocio Ameris dentro del mercado asegurador. Métrica core del negocio.</p>
         <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Valor actual: <b style="color:var(--c-ameris-blue)">${fmtMoney(amerisAUM)}</b> · <b>${amerisFunds.size}</b> fondos colocados · <b>${amerisInsurers.size}</b> aseguradoras clientes.</p>
+        <p style="color:var(--c-muted);font-size:11px;margin-top:8px"><b>Nota técnica:</b> los archivos CMF B.2 se publican con desfases entre aseguradoras. Si se exigiera el mismo período exacto a todas, el conteo colapsaría a las pocas que ya presentaron — por eso se usa la última foto disponible por cía.</p>
       `,
     },
     market_share: {
@@ -7394,8 +7405,8 @@ function renderPulsoAmeris() {
     clientes: {
       titulo: 'Aseguradoras clientes',
       contenido: `
-        <p><b>¿Qué es?</b> El número de compañías de seguros distintas que tienen al menos una posición en algún fondo Ameris en ${fmtPeriod(lastP)}.</p>
-        <p><b>¿Cómo se calcula?</b> Contamos los RUTs únicos de aseguradoras con posiciones cuyo administrador es Ameris.</p>
+        <p><b>¿Qué es?</b> El número de compañías de seguros distintas que tienen al menos una posición en algún fondo Ameris, considerando para cada una su <b>última presentación B.2 disponible</b> dentro del filtro activo.</p>
+        <p><b>¿Cómo se calcula?</b> Contamos los RUTs únicos de aseguradoras con posiciones cuyo administrador es Ameris. Si una aseguradora no presentó el último mes común, igual cuenta con su foto previa.</p>
         <p><b>¿Por qué importa?</b> Mide el <b>alcance</b> comercial. Más clientes = mejor diversificación de la cartera (menor riesgo de concentración).</p>
         <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Clientes actuales: <b>${amerisInsurers.size}</b> de <b>${totalInsurersInSys}</b> compañías totales en el sistema cargado. Espacio para captura: <b>${totalInsurersInSys - amerisInsurers.size}</b> aseguradoras sin posiciones Ameris.</p>
       `,
@@ -7521,7 +7532,7 @@ function renderPulsoAmeris() {
 
   container.innerHTML = `
     <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
-      <strong style="color:var(--c-ameris-navy)">Pulso Ameris AGF</strong> · Cierre <strong>${fmtPeriod(lastP)}</strong> · ${totalInsurersInSys} compañías de seguros · ${allCFI.length} posiciones CFI en el sistema.
+      <strong style="color:var(--c-ameris-navy)">Pulso Ameris AGF</strong> · Última foto disponible por aseguradora (más reciente: <strong>${fmtPeriod(lastP)}</strong>) · ${totalInsurersInSys} compañías de seguros · ${allCFI.length} posiciones CFI en el sistema.
     </div>
 
     <!-- KPI Row 1: AUM, Cuota mercado, Variación, Clientes -->
