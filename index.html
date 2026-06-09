@@ -1157,6 +1157,36 @@
     border: 1px solid var(--c-border);
     border-radius: var(--r-sm);
     padding: 10px 12px;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  /* Cuando es clickeable (tiene data-kpi-type), hint visual sutil */
+  .ic-summary-stat[data-kpi-type] { cursor: pointer; position: relative; }
+  .ic-summary-stat[data-kpi-type]:hover {
+    border-color: var(--c-ameris-blue-2);
+    box-shadow: 0 2px 8px rgba(31,68,197,.10);
+  }
+  .ic-summary-stat[data-kpi-type]::after {
+    content: "?";
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--c-ameris-soft);
+    color: var(--c-ameris-blue);
+    font-size: 9.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    opacity: .55;
+    transition: opacity .12s, background .12s, color .12s;
+  }
+  .ic-summary-stat[data-kpi-type]:hover::after {
+    opacity: 1;
+    background: var(--c-ameris-blue);
+    color: white;
   }
   .ic-summary-label {
     font-size: 9.5px;
@@ -4615,6 +4645,101 @@ function agfBreakdown(holdings, rutEmisor) {
   return Array.from(byFund.values()).sort((a, b) => b.totalLibro - a.totalLibro);
 }
 
+// === Helper: explicaciones para los KPIs de las cards (insurer/agf) ===
+// Cada stat tiene un data-kpi-type. Click → abre el modal con la explicación.
+// Reusa el modal global #kpi-modal y la lógica de close (configurada en setupControls).
+function _buildIcStatExplanation(type, ctx) {
+  // ctx = { entityType, entityName, periodo, valor, agfsCount, ciasCount, fondosCount, posiciones, ... }
+  const eIs = ctx.entityType === 'insurer';
+  switch (type) {
+    case 'vallibro':
+      return {
+        titulo: `Val. Libro · ${ctx.entityName}`,
+        contenido: `
+          <p><b>¿Qué es?</b> El valor contable total que ${eIs ? 'esta compañía de seguros' : 'esta AGF/emisor'} ${eIs ? 'tiene invertido en cuotas de fondos de inversión (CFI)' : 'administra en posiciones de CFI de las cías. de seguros'} al cierre de <b>${fmtPeriod(ctx.periodo)}</b>.</p>
+          <p><b>¿Cómo se calcula?</b> Suma del campo <code>VALOR_LIBRO</code> de todas las posiciones CFI* asociadas a ${eIs ? 'esta compañía' : 'esta AGF'} en el último período cargado.</p>
+          <p><b>¿Por qué importa?</b> ${eIs ? 'Indica el tamaño de la cartera AGF de esta aseguradora — cuánto destina al negocio de fondos de inversión.' : 'Es el AUM administrado por esta AGF en compañías de seguros — su tamaño en este segmento.'}</p>
+          <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Valor actual: <b style="color:var(--c-ameris-blue)">${fmtMoney(ctx.valor)}</b></p>
+        `,
+      };
+    case 'agfs':
+      return {
+        titulo: `AGFs · ${ctx.entityName}`,
+        contenido: `
+          <p><b>¿Qué es?</b> El número de administradoras distintas (AGFs y emisores) cuyos fondos están en la cartera de <b>${ctx.entityName}</b> en ${fmtPeriod(ctx.periodo)}.</p>
+          <p><b>¿Cómo se calcula?</b> Contamos los RUTs únicos de administradoras presentes en las posiciones CFI* de esta compañía, agrupando por RUT canónico (varias entidades de la misma marca se cuentan como una).</p>
+          <p><b>¿Por qué importa?</b> Indica el grado de <b>diversificación de proveedores</b>: si esta cía. compra de muchas AGFs, está más diversificada; si solo de pocas, hay concentración.</p>
+          <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Diversificación actual: <b>${ctx.agfsCount} AGFs</b> distintas administran posiciones de esta compañía.</p>
+        `,
+      };
+    case 'ciasclientes':
+      return {
+        titulo: `Compañías clientes · ${ctx.entityName}`,
+        contenido: `
+          <p><b>¿Qué es?</b> El número de compañías de seguros distintas que tienen al menos una posición en algún fondo administrado por <b>${ctx.entityName}</b> en ${fmtPeriod(ctx.periodo)}.</p>
+          <p><b>¿Cómo se calcula?</b> Contamos los RUTs únicos de aseguradoras con posiciones en fondos de esta AGF.</p>
+          <p><b>¿Por qué importa?</b> Indica el <b>alcance comercial</b> de la AGF en el sistema asegurador. Más clientes = mayor penetración y menos riesgo de concentración en un solo cliente.</p>
+          <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Cartera de clientes actual: <b>${ctx.ciasCount} compañías</b> de seguros invierten en fondos de esta AGF.</p>
+        `,
+      };
+    case 'fondos':
+      return {
+        titulo: `Fondos distintos · ${ctx.entityName}`,
+        contenido: `
+          <p><b>¿Qué es?</b> El número de fondos de inversión únicos (combinaciones de nemo + serie) ${eIs ? `que tiene esta compañía en su cartera` : `administrados por esta AGF y comprados por las cías. de seguros`} en ${fmtPeriod(ctx.periodo)}.</p>
+          <p><b>¿Cómo se calcula?</b> Set de claves <code>nemo + serie</code> de las posiciones de este período. ${eIs ? 'Si una cía. tiene la misma serie del mismo fondo en dos meses, se cuenta una sola vez.' : 'Si una AGF tiene un fondo con varias series, cada serie cuenta como un fondo distinto.'}</p>
+          <p><b>¿Por qué importa?</b> ${eIs ? 'Muestra cuántos instrumentos diferentes maneja esta cía. — un proxy de complejidad de su cartera.' : 'Muestra la oferta de instrumentos que esta AGF tiene colocados en el sistema asegurador.'}</p>
+          <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Fondos distintos: <b>${ctx.fondosCount}</b></p>
+        `,
+      };
+    case 'posiciones':
+      return {
+        titulo: `Posiciones · ${ctx.entityName}`,
+        contenido: `
+          <p><b>¿Qué es?</b> El número total de filas (registros individuales) en los archivos de la CMF asociadas a ${ctx.entityName} en ${fmtPeriod(ctx.periodo)}.</p>
+          <p><b>¿Cómo se calcula?</b> Cada combinación única de compañía × instrumento × serie en un período es una "posición". Es el número de filas que ves al expandir el detalle.</p>
+          <p><b>¿Por qué importa?</b> Aproxima el <b>volumen operativo</b>: cuántas líneas distintas hay que gestionar. Más posiciones suele indicar mayor sofisticación o mayor cantidad de clientes.</p>
+          <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Posiciones actuales: <b>${ctx.posiciones}</b></p>
+          <p style="color:#b45309;font-size:12px;font-style:italic">Nota: No es lo mismo que "fondos distintos". Una cía. puede tener el mismo fondo registrado en varios renglones, aumentando posiciones sin cambiar la cantidad de fondos.</p>
+        `,
+      };
+    case 'periodo':
+      return {
+        titulo: `Período de los datos`,
+        contenido: `
+          <p><b>¿Qué es?</b> El mes y año del archivo CMF más reciente que contiene posiciones de <b>${ctx.entityName}</b>, dentro de los archivos cargados (o filtrados).</p>
+          <p><b>¿Por qué importa?</b> Indica a qué fecha corresponden las cifras que estás viendo. Si filtraste períodos, este será el último filtrado disponible.</p>
+          <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Período mostrado: <b>${fmtPeriod(ctx.periodo)}</b></p>
+        `,
+      };
+  }
+  return null;
+}
+
+// Abrir el modal global #kpi-modal con una explicación construida ad-hoc.
+function _showKpiExplanation(exp) {
+  if (!exp) return;
+  const modal = document.getElementById('kpi-modal');
+  if (!modal) return;
+  document.getElementById('kpi-modal-title').textContent = exp.titulo;
+  document.getElementById('kpi-modal-body').innerHTML = exp.contenido;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+// Wire de KPIs clickeables dentro de cards (insurer o agf). Recibe el
+// contenedor (.ic-body-inner) y el contexto del entity.
+function _wireIcStatClicks(rootEl, ctx) {
+  rootEl.querySelectorAll('.ic-summary-stat[data-kpi-type]').forEach(stat => {
+    stat.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const type = stat.dataset.kpiType;
+      const exp = _buildIcStatExplanation(type, ctx);
+      _showKpiExplanation(exp);
+    });
+  });
+}
+
 // Estado: qué AGF está expandida + búsqueda. Mismo patrón que Por Compañía.
 let AGF_OPEN_RUT = '';
 let AGF_SEARCH = '';
@@ -4747,25 +4872,26 @@ function renderAGFCardBody(rut, hs) {
     : fmtPeriod(lastP);
 
   // === HTML del resumen ejecutivo (nivel 1) ===
+  // Cada stat es clickeable: data-kpi-type abre el modal con explicación.
   const summaryStats = `
     <div class="ic-summary-stats">
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="vallibro" title="Click para ver explicación">
         <div class="ic-summary-label">Val. Libro</div>
         <div class="ic-summary-value" style="color:var(--c-ameris-blue)">${fmtMoney(totLibro)}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="ciasclientes" title="Click para ver explicación">
         <div class="ic-summary-label">Cías. clientes</div>
         <div class="ic-summary-value">${insurersList.length}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="fondos" title="Click para ver explicación">
         <div class="ic-summary-label">Fondos distintos</div>
         <div class="ic-summary-value">${fundsCount}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="posiciones" title="Click para ver explicación">
         <div class="ic-summary-label">Posiciones</div>
         <div class="ic-summary-value">${positionsCount}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="periodo" title="Click para ver explicación">
         <div class="ic-summary-label">Período</div>
         <div class="ic-summary-value" style="font-size:14px">${fmtPeriod(lastP)}</div>
       </div>
@@ -4815,8 +4941,21 @@ function renderAGFCardBody(rut, hs) {
 
   const safeId = rut.replace(/[^A-Za-z0-9-]/g, '_');
 
-  // Wire del botón expander tras innerHTML
+  // Wire del botón expander + KPIs clickeables tras innerHTML
   setTimeout(() => {
+    // KPIs clickeables del resumen ejecutivo
+    const bodyEl = document.getElementById('agf-body-' + safeId);
+    if (bodyEl) {
+      _wireIcStatClicks(bodyEl, {
+        entityType: 'agf',
+        entityName: canonicalAgfName(rut),
+        periodo: lastP,
+        valor: totLibro,
+        ciasCount: insurersList.length,
+        fondosCount: fundsCount,
+        posiciones: positionsCount,
+      });
+    }
     const detailBtn = document.getElementById('agf-show-detail-' + safeId);
     const detailContainer = document.getElementById('agf-detail-container-' + safeId);
     if (detailBtn && detailContainer) {
@@ -5119,25 +5258,26 @@ function renderInsurerCardBody(rut) {
     : renderInsurerByCategory(recsFiltered, lastP);
 
   // === HTML del resumen ejecutivo (nivel 1, siempre visible) ===
+  // Cada stat es clickeable: data-kpi-type abre el modal con explicación.
   const summaryStats = `
     <div class="ic-summary-stats">
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="vallibro" title="Click para ver explicación">
         <div class="ic-summary-label">Val. Libro</div>
         <div class="ic-summary-value" style="color:var(--c-ameris-blue)">${fmtMoney(totLibro)}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="agfs" title="Click para ver explicación">
         <div class="ic-summary-label">AGFs</div>
         <div class="ic-summary-value">${agfsForFilter.length}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="fondos" title="Click para ver explicación">
         <div class="ic-summary-label">Fondos distintos</div>
         <div class="ic-summary-value">${fundsCount}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="posiciones" title="Click para ver explicación">
         <div class="ic-summary-label">Posiciones</div>
         <div class="ic-summary-value">${positionsCount}</div>
       </div>
-      <div class="ic-summary-stat">
+      <div class="ic-summary-stat" data-kpi-type="periodo" title="Click para ver explicación">
         <div class="ic-summary-label">Período</div>
         <div class="ic-summary-value" style="font-size:14px">${fmtPeriod(lastP)}</div>
       </div>
@@ -5187,6 +5327,21 @@ function renderInsurerCardBody(rut) {
 
   // Wire controles del nivel 2 (toggle, filtro, expand button) tras innerHTML
   setTimeout(() => {
+    // KPIs clickeables del resumen ejecutivo
+    const bodyEl = document.getElementById('insurer-body-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
+    if (bodyEl) {
+      // Buscar el nombre de la compañía desde el holdings
+      const ins = aggregateByInsurer(activeHoldings()).find(c => c.rut === rut);
+      _wireIcStatClicks(bodyEl, {
+        entityType: 'insurer',
+        entityName: (ins ? ins.name : '') || 'esta compañía',
+        periodo: lastP,
+        valor: totLibro,
+        agfsCount: agfsForFilter.length,
+        fondosCount: fundsCount,
+        posiciones: positionsCount,
+      });
+    }
     document.querySelectorAll('.ic-vt-btn[data-mode]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
