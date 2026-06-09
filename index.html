@@ -3804,34 +3804,54 @@ function renderGeneral() {
     // Top movers entre períodos (requiere 2+ períodos)
     let moversBlock = '';
     if (prevPeriod) {
-      // Diagnóstico para ayudar a identificar por qué pueden estar vacías las tablas:
-      // si no hay matches entre insLast e insPrev por RUT, los placeholders explican.
-      const insLastRuts = new Set(insLast.map(c => c.rut));
-      const insPrevRuts = new Set(insPrev.map(c => c.rust || c.rut));
-      const matchedRuts = Array.from(insLastRuts).filter(r => prevByRut.has(r));
-      const positiveMovements = companies.filter(c => c.prev > 0);
-      const winners = positiveMovements.slice().sort((a, b) => b.deltaAbs - a.deltaAbs).filter(c => c.deltaAbs > 0).slice(0, 5);
-      const losers = positiveMovements.slice().sort((a, b) => a.deltaAbs - b.deltaAbs).slice(0, 5).filter(c => c.deltaAbs < 0);
+      // Universo COMPLETO: unir RUTs del último período Y del período inicial.
+      // Antes solo se consideraban compañías presentes en el último, lo que
+      // ocultaba las que desaparecieron entre períodos (caídas totales).
+      const lastByRut = new Map(insLast.map(c => [c.rut, c]));
+      const prevByRutFull = new Map(insPrev.map(c => [c.rut, c]));
+      const allRuts = new Set([...lastByRut.keys(), ...prevByRutFull.keys()]);
+      const allCompanies = Array.from(allRuts).map(rut => {
+        const last = lastByRut.get(rut);
+        const prev = prevByRutFull.get(rut);
+        const valLast = last ? last.valLibro : 0;
+        const valPrev = prev ? prev.valLibro : 0;
+        return {
+          rut,
+          name: (last || prev).name,
+          valLibro: valLast,
+          prev: valPrev,
+          deltaAbs: valLast - valPrev,
+          deltaPct: valPrev > 0 ? (valLast - valPrev) / valPrev : null,
+          isNew: valPrev === 0 && valLast > 0,
+          isGone: valLast === 0 && valPrev > 0,
+        };
+      });
+      // Filter primero, después sort, después slice — orden correcto para
+      // garantizar que siempre devolvemos top N del subset relevante.
+      const winners = allCompanies
+        .filter(c => c.deltaAbs > 0)
+        .sort((a, b) => b.deltaAbs - a.deltaAbs)
+        .slice(0, 10);
+      const losers = allCompanies
+        .filter(c => c.deltaAbs < 0)
+        .sort((a, b) => a.deltaAbs - b.deltaAbs)
+        .slice(0, 10);
+
       const moveRow = c => {
         const cls = c.deltaAbs > 0 ? 'pos' : 'neg';
+        const tag = c.isNew ? ' <span style="background:#16a34a;color:white;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.3px">NUEVA</span>'
+                  : c.isGone ? ' <span style="background:#dc2626;color:white;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.3px">SALIÓ</span>' : '';
+        const pctText = c.isNew ? 'nueva'
+                      : c.isGone ? '-100%'
+                      : c.deltaPct === null ? '—'
+                      : `${c.deltaPct > 0 ? '+' : ''}${(c.deltaPct * 100).toFixed(1)}%`;
         return `<tr>
-          <td><strong>${escapeHtml(c.name)}</strong></td>
+          <td><strong>${escapeHtml(c.name)}</strong>${tag}<div style="color:var(--c-muted);font-size:10.5px">${fmtMoney(c.prev)} → ${fmtMoney(c.valLibro)}</div></td>
           <td class="num ${cls}">${c.deltaAbs > 0 ? '+' : ''}${fmtMoney(Math.abs(c.deltaAbs))}</td>
-          <td class="num ${cls}">${c.deltaPct === null ? '—' : `${c.deltaPct > 0 ? '+' : ''}${(c.deltaPct * 100).toFixed(1)}%`}</td>
+          <td class="num ${cls}">${pctText}</td>
         </tr>`;
       };
-      // Log de diagnóstico para casos donde nada match
-      if (winners.length === 0 && losers.length === 0) {
-        console.warn('[Resumen General] No hay movimientos entre períodos. Diagnóstico:', {
-          lastPeriod, prevPeriod,
-          companiasUltimo: insLast.length,
-          companiasPrevio: insPrev.length,
-          matchedRuts: matchedRuts.length,
-          rutsEnUltimo: Array.from(insLastRuts),
-          rutsEnPrevio: insPrev.map(c => c.rut),
-        });
-      }
-      const emptyMsg = (txt) => `<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--c-muted);font-size:11.5px;line-height:1.5">${txt}<br><span style="font-size:10.5px">Último: ${insLast.length} cías · Anterior: ${insPrev.length} cías · Comparables: ${matchedRuts.length}</span></td></tr>`;
+      const emptyMsg = (txt) => `<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--c-muted);font-size:11.5px;line-height:1.5">${txt}<br><span style="font-size:10.5px">Último (${lastPeriod}): ${insLast.length} cías · Inicial (${prevPeriod}): ${insPrev.length} cías</span></td></tr>`;
       moversBlock = `
         <div class="grid-2 equal-height">
           <div class="card">
