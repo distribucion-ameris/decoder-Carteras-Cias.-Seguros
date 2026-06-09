@@ -3805,18 +3805,31 @@ function renderGeneral() {
     let moversBlock = '';
     if (prevPeriod) {
       // Universo COMPLETO: unir RUTs del último período Y del período inicial.
-      // Antes solo se consideraban compañías presentes en el último, lo que
-      // ocultaba las que desaparecieron entre períodos (caídas totales).
-      const lastByRut = new Map(insLast.map(c => [c.rut, c]));
-      const prevByRutFull = new Map(insPrev.map(c => [c.rut, c]));
-      const allRuts = new Set([...lastByRut.keys(), ...prevByRutFull.keys()]);
-      const allCompanies = Array.from(allRuts).map(rut => {
-        const last = lastByRut.get(rut);
-        const prev = prevByRutFull.get(rut);
+      // IMPORTANTE: normalizamos el RUT (solo dígitos sin DV) para que matche
+      // entre archivos viejos y nuevos aunque tengan formatos distintos
+      // (ej. "96812960-0" vs "096812960-0"). El bug previo era que todas las
+      // compañías aparecían como NUEVAS porque los RUTs no se cruzaban.
+      const _normKey = r => (r || '').replace(/\D/g, '').replace(/^0+/, '').slice(0, -1) || (r || '');
+      const lastByKey = new Map(insLast.map(c => [_normKey(c.rut), c]));
+      const prevByKey = new Map(insPrev.map(c => [_normKey(c.rut), c]));
+      const allKeys = new Set([...lastByKey.keys(), ...prevByKey.keys()]);
+
+      // Diagnóstico en consola si el cruce sigue sin matchear
+      const matchedCount = Array.from(lastByKey.keys()).filter(k => prevByKey.has(k)).length;
+      if (matchedCount === 0 && insLast.length > 0 && insPrev.length > 0) {
+        console.warn('[Resumen General] 0 RUTs coinciden entre periodos pese a normalización. Inspeccionar formato:', {
+          rutsUltimoPeriodoSample: insLast.slice(0, 3).map(c => ({ rut: c.rut, normKey: _normKey(c.rut) })),
+          rutsInicialPeriodoSample: insPrev.slice(0, 3).map(c => ({ rut: c.rut, normKey: _normKey(c.rut) })),
+        });
+      }
+
+      const allCompanies = Array.from(allKeys).map(key => {
+        const last = lastByKey.get(key);
+        const prev = prevByKey.get(key);
         const valLast = last ? last.valLibro : 0;
         const valPrev = prev ? prev.valLibro : 0;
         return {
-          rut,
+          rut: (last || prev).rut,
           name: (last || prev).name,
           valLibro: valLast,
           prev: valPrev,
