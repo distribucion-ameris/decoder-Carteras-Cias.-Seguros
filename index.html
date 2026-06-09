@@ -722,6 +722,79 @@
     height: 4px;
   }
   .kpi:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+
+  /* KPI clickeable con ícono de ayuda en la esquina superior derecha */
+  .kpi-clickable { cursor: pointer; position: relative; }
+  .kpi-clickable:hover { border-color: var(--c-ameris-blue-2); }
+  .kpi-info-icon {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--c-ameris-soft);
+    color: var(--c-ameris-blue);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: background .12s, color .12s;
+    cursor: help;
+  }
+  .kpi-clickable:hover .kpi-info-icon {
+    background: var(--c-ameris-blue);
+    color: white;
+  }
+
+  /* Modal de explicación de KPI */
+  .kpi-modal { position: fixed; inset: 0; z-index: 10000; display: none; }
+  .kpi-modal.open { display: block; }
+  .kpi-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(2px);
+    cursor: pointer;
+  }
+  .kpi-modal-content {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 580px; width: 92%;
+    max-height: 86vh;
+    overflow-y: auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .kpi-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--c-border);
+    background: linear-gradient(135deg, var(--c-ameris-blue) 0%, var(--c-ameris-navy) 100%);
+    color: white;
+    border-radius: 12px 12px 0 0;
+  }
+  .kpi-modal-title { font-size: 16px; font-weight: 600; margin: 0; }
+  .kpi-modal-close {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    width: 30px; height: 30px;
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .kpi-modal-body { padding: 18px 22px 22px; font-size: 13.5px; line-height: 1.6; color: var(--c-text); }
+  .kpi-modal-body p { margin: 0 0 12px; }
+  .kpi-modal-body ul { margin: 0 0 12px; padding-left: 22px; }
+  .kpi-modal-body li { margin-bottom: 4px; }
+  .kpi-modal-body code { background: var(--c-ameris-soft); color: var(--c-ameris-navy); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
   .kpi .label {
     font-size: 10px;
     color: var(--c-muted);
@@ -1887,6 +1960,18 @@
 
   </div>
 </main>
+
+<!-- Modal de explicación de KPIs (Resumen General) -->
+<div class="kpi-modal" id="kpi-modal" role="dialog" aria-modal="true">
+  <div class="kpi-modal-overlay" id="kpi-modal-overlay"></div>
+  <div class="kpi-modal-content">
+    <div class="kpi-modal-header">
+      <h3 class="kpi-modal-title" id="kpi-modal-title">Indicador</h3>
+      <button type="button" class="kpi-modal-close" id="kpi-modal-close">✕</button>
+    </div>
+    <div class="kpi-modal-body" id="kpi-modal-body"></div>
+  </div>
+</div>
 
 <div class="footer-wrap">
   <div class="accent-strip"></div>
@@ -3820,33 +3905,102 @@ function renderGeneral() {
   const lastPeriodIns = new Set(lastPeriodHs.map(h => h.insurerRut)).size;
   const lastPeriodAgfs = new Set(lastPeriodHs.map(h => h.rutAdm || h.rutEmisor).filter(Boolean)).size;
 
+  // Explicaciones detalladas de cada KPI — usadas por el modal "¿Qué significa esto?"
+  const kpiExplanations = {
+    aum: {
+      titulo: `AUM CFI · ${lastPeriod}`,
+      contenido: `
+        <p><b>¿Qué es?</b> El monto total invertido en <b>Cuotas de Fondos de Inversión (CFI)</b> por todas las compañías de seguros chilenas en el período más reciente que tengas cargado.</p>
+        <p><b>¿Cómo se calcula?</b> Sumamos el campo <code>VALOR_LIBRO</code> de todas las posiciones tipo CFI* del último mes, considerando tanto:</p>
+        <ul>
+          <li><b>B.2</b> — Cuotas de fondos de inversión nacionales</li>
+          <li><b>B.5</b> — Cuotas de fondos de inversión administradas por AGFs chilenas con activos en el extranjero</li>
+        </ul>
+        <p><b>¿Por qué importa?</b> Es el tamaño total del mercado AGF dentro del sistema asegurador: cuánta plata mueven en total las cías. en fondos administrados por AGFs.</p>
+        <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Datos actuales: <b>${lastPeriodIns} compañías</b> reportan posiciones · <b>${lastPeriodAgfs} AGFs</b> distintas administran esas cuotas.</p>
+      `,
+    },
+    delta: {
+      titulo: prevPeriod ? `Variación entre ${prevPeriod} y ${lastPeriod}` : 'Δ período inicial',
+      contenido: prevPeriod ? `
+        <p><b>¿Qué es?</b> El porcentaje de cambio del AUM CFI total entre el <b>primer período cargado</b> (${prevPeriod}) y el <b>último período cargado</b> (${lastPeriod}).</p>
+        <p><b>¿Cómo se calcula?</b></p>
+        <p style="font-family:monospace;background:var(--c-ameris-soft);padding:8px 12px;border-radius:4px;font-size:12px">
+          Δ % = (AUM<sub>último</sub> − AUM<sub>inicial</sub>) / AUM<sub>inicial</sub> × 100
+        </p>
+        <p>Valores reales:</p>
+        <ul>
+          <li>${prevPeriod}: ${fmtMoney(prevPeriodSum)}</li>
+          <li>${lastPeriod}: ${fmtMoney(lastPeriodSum)}</li>
+          <li>Diferencia: ${periodDelta !== null ? `${periodDelta > 0 ? '+' : ''}${fmtMoney(lastPeriodSum - prevPeriodSum)}` : '—'} (${periodDelta !== null ? `${periodDelta > 0 ? '+' : ''}${(periodDelta * 100).toFixed(2)}%` : '—'})</li>
+        </ul>
+        <p><b>¿Por qué importa?</b> Indica si el negocio AGF está creciendo o reduciéndose en términos de cuánto invierten las aseguradoras. Verde = creció; rojo = decreció.</p>
+        <p style="color:var(--c-muted);font-size:12px;margin-top:14px">El "período inicial" es el más antiguo que tengas cargado. Si querés analizar otro rango, usá el filtro <b>Período</b> arriba.</p>
+      ` : '<p>Carga al menos 2 períodos distintos para ver la variación.</p>',
+    },
+    localExt: {
+      titulo: `Inversión local vs extranjera · ${lastPeriod}`,
+      contenido: `
+        <p><b>¿Qué es?</b> Cómo se reparte el AUM CFI entre <b>fondos nacionales</b> (B.2) y <b>fondos extranjeros administrados por AGFs chilenas</b> (B.5 cuotas).</p>
+        <p><b>¿Cómo se calcula?</b></p>
+        <ul>
+          <li><b>Local (B.2):</b> ${fmtMoney(lastPeriodLocal)} (${lastPeriodSum > 0 ? Math.round(lastPeriodLocal / lastPeriodSum * 100) : 0}%)</li>
+          <li><b>Extranjero (B.5 cuotas):</b> ${fmtMoney(lastPeriodExt)} (${lastPeriodSum > 0 ? Math.round(lastPeriodExt / lastPeriodSum * 100) : 0}%)</li>
+        </ul>
+        <p><b>¿Por qué importa?</b> Muestra el apetito de las cías. de seguros por instrumentos internacionales vs nacionales. Una proporción muy alta de extranjero puede indicar diversificación geográfica o búsqueda de retornos en mercados maduros.</p>
+        <p style="color:var(--c-muted);font-size:12px;margin-top:14px">No incluye bonos extranjeros ni acciones individuales — solo cuotas de fondos administradas por AGFs chilenas.</p>
+      `,
+    },
+    total: {
+      titulo: 'Total cargado en el histórico',
+      contenido: `
+        <p><b>¿Qué es?</b> La suma del AUM CFI de TODOS los períodos cargados (no solo el último). Un dato administrativo del tamaño de tu base de datos.</p>
+        <p><b>¿Cómo se calcula?</b> Es la suma simple de Val. Libro de todas las posiciones CFI en todos los archivos B.2/B.5 cargados.</p>
+        <p><b>Datos actuales:</b></p>
+        <ul>
+          <li><b>${periodsLoaded.length}</b> período${periodsLoaded.length !== 1 ? 's' : ''} cargado${periodsLoaded.length !== 1 ? 's' : ''}</li>
+          <li><b>${insList.length}</b> compañías distintas reportan en algún período</li>
+          <li><b>${agfList.length}</b> AGFs distintas administran fondos en algún período</li>
+        </ul>
+        <p style="color:#b45309;font-size:12px;margin-top:14px"><b>Cuidado:</b> esta cifra <i>no</i> representa el AUM real del mercado. Si cargás 12 meses, una cía. que mantuvo ${fmtMoney(1000000000)} cada mes aparece sumada como ${fmtMoney(12000000000)}. Es solo un indicador del volumen de datos. Para AUM real usá <b>AUM CFI · último período</b>.</p>
+      `,
+    },
+  };
+
   // KPI cards — todo computado desde los archivos cargados (CLP)
   const kpis = `
     <div class="kpi-grid">
-      <div class="kpi accent">
+      <div class="kpi accent kpi-clickable" data-kpi="aum">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">AUM CFI · último período</div>
         <div class="value">${fmtMoney(lastPeriodSum)}</div>
         <div class="sublabel">${lastPeriod} · ${lastPeriodIns} compañías · ${lastPeriodAgfs} AGFs</div>
       </div>
-      <div class="kpi accent">
-        <div class="label">${prevPeriod ? `Δ vs ${prevPeriod}` : 'Δ período anterior'}</div>
+      <div class="kpi accent kpi-clickable" data-kpi="delta">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
+        <div class="label">${prevPeriod ? `Δ vs ${prevPeriod}` : 'Δ período inicial'}</div>
         <div class="value" style="color:${periodDelta === null ? 'var(--c-muted)' : periodDelta > 0 ? '#047857' : '#b91c1c'}">
           ${periodDelta === null ? '—' : `${periodDelta > 0 ? '+' : ''}${(periodDelta * 100).toFixed(2)}%`}
         </div>
         <div class="sublabel">${periodDelta === null ? 'Carga 2+ períodos para comparar' : `${prevPeriod} → ${lastPeriod}`}</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi="localExt">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Local vs Extranjero · último período</div>
         <div class="value" style="font-size:18px">${lastPeriodSum > 0 ? Math.round(lastPeriodLocal / lastPeriodSum * 100) : 0}% / ${lastPeriodSum > 0 ? Math.round(lastPeriodExt / lastPeriodSum * 100) : 0}%</div>
         <div class="sublabel">B.2 ${fmtMoney(lastPeriodLocal)} · B.5 ${fmtMoney(lastPeriodExt)}</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi="total">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Total cargado (todos los períodos)</div>
         <div class="value">${fmtMoney(sumLibro)}</div>
         <div class="sublabel">${periodsLoaded.length} período${periodsLoaded.length !== 1 ? 's' : ''} · ${insList.length} cías · ${agfList.length} AGFs</div>
       </div>
     </div>
   `;
+
+  // Guardar las explicaciones en window para que el handler de click las encuentre
+  window._KPI_EXPLANATIONS = kpiExplanations;
 
   // === Tablas inferiores: TODAS sobre el último período ===
   // Antes sumaban TODOS los períodos cargados (números inflados que no
@@ -4290,12 +4444,26 @@ function renderGeneral() {
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Resumen general</strong> · Todas las métricas se calculan a partir de los archivos B.2 y B.5 cargados. Carga más períodos para ver evolución y deltas.
+      <strong>Resumen general</strong> · Todas las métricas se calculan a partir de los archivos B.2 y B.5 cargados. Carga más períodos para ver evolución y deltas. <span style="color:var(--c-muted);font-size:11.5px;margin-left:6px">· Click en cualquier indicador (?) para ver qué representa.</span>
     </div>
     ${kpis}
     ${macroSections}
     ${top15AgfsBlock}
   `;
+
+  // Wire click handlers de los KPIs clickeables → abrir modal con explicación
+  container.querySelectorAll('.kpi-clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const kpiKey = el.dataset.kpi;
+      const exp = (window._KPI_EXPLANATIONS || {})[kpiKey];
+      if (!exp) return;
+      const modal = document.getElementById('kpi-modal');
+      document.getElementById('kpi-modal-title').textContent = exp.titulo;
+      document.getElementById('kpi-modal-body').innerHTML = exp.contenido;
+      modal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    });
+  });
 }
 
 // Renderiza la sección "Auditoría de nombres pendientes" del Resumen General.
@@ -7376,6 +7544,20 @@ function decorateScrollContainers() {
 }
 
 function setupControls() {
+  // === Cierre del modal de explicación de KPIs ===
+  const kpiModal = document.getElementById('kpi-modal');
+  if (kpiModal) {
+    const closeKpiModal = () => {
+      kpiModal.classList.remove('open');
+      document.body.style.overflow = '';
+    };
+    document.getElementById('kpi-modal-overlay').addEventListener('click', closeKpiModal);
+    document.getElementById('kpi-modal-close').addEventListener('click', closeKpiModal);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && kpiModal.classList.contains('open')) closeKpiModal();
+    });
+  }
+
   // === Selector múltiple de períodos ===
   const trigger = document.getElementById('period-multi-btn');
   const panel = document.getElementById('period-multi-panel');
