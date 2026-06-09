@@ -5133,6 +5133,10 @@ function renderAGFDetail(rut, hs) {
 let INSURER_VIEW_MODE = 'category';
 let INSURER_AGF_FILTER = '';
 let INSURER_OPEN_RUT = '';
+// Mantiene el estado de "detalle de fondos" expandido entre re-renders.
+// Si el usuario cambia 'Por categoría' ↔ 'Por AGF' o cambia el filtro AGF,
+// el detalle se mantiene abierto (no obliga a re-clickear).
+let INSURER_DETAIL_OPEN = false;
 let INSURER_SEARCH = '';
 
 function renderInsurer() {
@@ -5218,7 +5222,10 @@ function renderInsurer() {
     head.addEventListener('click', () => {
       const rut = head.dataset.rut;
       INSURER_OPEN_RUT = (INSURER_OPEN_RUT === rut) ? '' : rut;
-      INSURER_AGF_FILTER = '';  // reset al abrir/cerrar
+      // Reset solo cuando se cierra o se cambia de card — no entre cambios
+      // de modo/filtro dentro de la misma card.
+      INSURER_AGF_FILTER = '';
+      INSURER_DETAIL_OPEN = false;
       renderInsurer();
     });
   });
@@ -5421,7 +5428,8 @@ function renderInsurerCardBody(rut) {
         e.stopPropagation();
         if (btn.classList.contains('active')) return;
         INSURER_VIEW_MODE = btn.dataset.mode;
-        INSURER_AGF_FILTER = '';
+        // NO resetear el filtro ni cerrar el detalle: el usuario puede
+        // alternar entre 'Por categoría' y 'Por AGF' manteniendo el contexto.
         renderInsurer();
       });
     });
@@ -5448,10 +5456,11 @@ function renderInsurerCardBody(rut) {
     if (detailBtn && detailContainer) {
       detailBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const open = detailContainer.style.display !== 'none';
-        detailContainer.style.display = open ? 'none' : 'block';
-        detailBtn.textContent = open ? 'Ver detalle de fondos' : 'Ocultar detalle';
-        detailBtn.classList.toggle('open', !open);
+        // Persistir el estado para que sobreviva a cambios de modo/filtro
+        INSURER_DETAIL_OPEN = !INSURER_DETAIL_OPEN;
+        detailContainer.style.display = INSURER_DETAIL_OPEN ? 'block' : 'none';
+        detailBtn.textContent = INSURER_DETAIL_OPEN ? 'Ocultar detalle' : 'Ver detalle de fondos';
+        detailBtn.classList.toggle('open', INSURER_DETAIL_OPEN);
       });
     }
   }, 0);
@@ -5489,10 +5498,10 @@ function renderInsurerCardBody(rut) {
       </div>
 
       <div class="ic-detail-expander">
-        <button type="button" class="btn btn-action" id="ic-show-detail-${safeId}" style="width:100%;padding:9px;font-size:12.5px">Ver detalle de fondos</button>
+        <button type="button" class="btn btn-action${INSURER_DETAIL_OPEN ? ' open' : ''}" id="ic-show-detail-${safeId}" style="width:100%;padding:9px;font-size:12.5px">${INSURER_DETAIL_OPEN ? 'Ocultar detalle' : 'Ver detalle de fondos'}</button>
       </div>
 
-      <div id="ic-detail-container-${safeId}" style="display:none;margin-top:14px">
+      <div id="ic-detail-container-${safeId}" style="display:${INSURER_DETAIL_OPEN ? 'block' : 'none'};margin-top:14px">
         <div class="ic-controls">
           <div class="view-toggle" role="tablist">
             <button type="button" class="vt-btn ic-vt-btn ${INSURER_VIEW_MODE === 'category' ? 'active' : ''}" data-mode="category">Por categoría</button>
