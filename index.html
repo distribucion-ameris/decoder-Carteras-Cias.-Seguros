@@ -3654,13 +3654,22 @@ function renderGeneral() {
   // (que sumaría todos los períodos cargados y daría números inflados).
 
   // Cálculo de períodos cargados: si hay 2+ podemos mostrar deltas.
-  // Comparamos PRIMER período cargado vs ÚLTIMO (historia completa, no
-  // mes-a-mes), porque cuando hay 15+ períodos cargados el delta mensual
-  // es poco informativo — interesa ver evolución desde que empezó el
-  // seguimiento.
+  // Comparamos PRIMER período CON DATOS REALES vs ÚLTIMO (historia completa).
+  // No basta usar periodsLoaded[0] porque un período puede estar en STATE.files
+  // sin contener cuotas CFI (sólo acciones o sólo bonos B.5). En ese caso
+  // hay que avanzar al siguiente período hasta encontrar uno con datos.
   const periodsLoaded = allPeriods();  // ordenados asc
   const lastPeriod = periodsLoaded[periodsLoaded.length - 1] || '—';
-  const prevPeriod = periodsLoaded.length >= 2 ? periodsLoaded[0] : null;
+  // Buscar el primer período con al menos una compañía cargada
+  let prevPeriod = null;
+  for (const p of periodsLoaded) {
+    if (p === lastPeriod) break;  // no comparar último consigo mismo
+    const recsHere = hs.filter(h => h._periodo === p);
+    if (recsHere.length > 0) {
+      prevPeriod = p;
+      break;
+    }
+  }
 
   // Para "AUM último período" y "Δ vs anterior" computamos solo el último vs el anterior
   const lastPeriodHs = hs.filter(h => h._periodo === lastPeriod);
@@ -3937,8 +3946,8 @@ function renderGeneral() {
     }).join('');
 
     // ============== ALERTAS ==============
-    // 1) Fondos que más crecieron en val. absoluto vs período anterior
-    // 2) Fondos NUEVOS (no estaban en período anterior) — sobre todo si es de una AGF nueva en la cartera
+    // 1) Fondos que más crecieron en val. absoluto vs período inicial
+    // 2) Fondos NUEVOS en el ÚLTIMO AÑO cargado (no aparecían en años previos)
     let alertsBlock = '';
     if (prevPeriod) {
       // Detectar AGFs que ya existían en el período anterior (para distinguir fondo nuevo de AGF nueva)
@@ -3950,9 +3959,44 @@ function renderGeneral() {
         .sort((a, b) => b.deltaAbs - a.deltaAbs)
         .slice(0, 10);
 
-      // Fondos NUEVOS aparecidos por primera vez
-      const newFunds = fundsRanked
-        .filter(f => f.isNew && f.valLibro > 0)
+      // === FONDOS NUEVOS EN EL ÚLTIMO AÑO ===
+      // Agregamos por año: identificamos fondos que aparecen en cualquier
+      // período del último año cargado pero NO aparecían en años previos.
+      // Esto da una vista anual (no mes-a-mes) más significativa.
+      const yrLast = lastPeriod.slice(0, 4);  // ej. "2026"
+      const previousYearKeys = new Set();      // claves de fondos en años < yrLast
+      const lastYearAgg = new Map();           // key → { detalle del fondo en último año }
+      for (const h of hs) {
+        const yr = h._periodo.slice(0, 4);
+        const key = h.nemo + '||' + (h.serie || '');
+        if (yr < yrLast) {
+          previousYearKeys.add(key);
+        } else if (yr === yrLast) {
+          if (!lastYearAgg.has(key)) {
+            lastYearAgg.set(key, {
+              nemo: h.nemo, serie: h.serie, agf: h.agf, agfRut: h.rutAdm || h.rutEmisor,
+              valLibro: 0, cias: new Set(),
+            });
+          }
+          const e = lastYearAgg.get(key);
+          // Usar el Val. Libro del último período (si existe), sino el más reciente disponible
+          if (h._periodo === lastPeriod) {
+            e.valLibro = (e.valLibroFromLast || 0) + h.valLibro;
+            e.valLibroFromLast = e.valLibro;
+            e.cias.add(h._insurerRut);
+          } else if (!e.valLibroFromLast) {
+            // si todavía no hemos visto del último período, ir acumulando del año
+            e.valLibro = Math.max(e.valLibro, h.valLibro);
+          }
+          e.cias.add(h._insurerRut);
+        }
+      }
+      const newFunds = Array.from(lastYearAgg.values())
+        .filter(f => {
+          const key = f.nemo + '||' + (f.serie || '');
+          return !previousYearKeys.has(key) && f.valLibro > 0;
+        })
+        .map(f => ({ ...f, cias: f.cias.size }))
         .sort((a, b) => b.valLibro - a.valLibro);
 
       const newFundsFromNewAgf = newFunds.filter(f => {
@@ -4007,10 +4051,10 @@ function renderGeneral() {
           ${newFunds.length > 0 ? `
           <div class="card" style="border-left:4px solid #dc2626">
             <div class="card-header" style="background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%)">
-              <div class="card-title">Fondos nuevos · ${newFunds.length}${newFundsFromNewAgf.length > 0 ? ` (${newFundsFromNewAgf.length} de AGFs nuevas)` : ''}</div>
+              <div class="card-title">Fondos nuevos en ${lastPeriod.slice(0, 4)} · ${newFunds.length}${newFundsFromNewAgf.length > 0 ? ` (${newFundsFromNewAgf.length} de AGFs nuevas)` : ''}</div>
             </div>
             <div style="padding:8px 14px 0;font-size:11.5px;color:var(--c-muted)">
-              Fondos que aparecen por primera vez en ${lastPeriod}. ${newFundsFromNewAgf.length > 0 ? '<strong style="color:#dc2626">Filas amarillas: AGF que no aparecía antes</strong> (apertura de relación con nueva administradora).' : ''}
+              Fondos que aparecen por primera vez en ${lastPeriod.slice(0, 4)} (no aparecían en años anteriores cargados). ${newFundsFromNewAgf.length > 0 ? '<strong style="color:#dc2626">Filas amarillas: AGF que no aparecía antes</strong> (apertura de relación con nueva administradora).' : ''}
             </div>
             <div style="max-height:480px;overflow-y:auto;overflow-x:auto;border-top:1px solid var(--c-border)">
               <table style="width:100%">
@@ -4063,34 +4107,18 @@ function renderGeneral() {
         </div>
       </div>
 
-      <div class="grid-2 equal-height">
-        <div class="card">
-          <div class="card-header"><div class="card-title">Ranking detallado · Val. Libro y Δ${prevPeriod ? ` vs ${prevPeriod}` : ''}</div></div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th>#</th><th>Compañía</th>
-                <th class="num">Val. Libro</th>
-                <th class="num">% cartera</th>
-                <th class="num">Δ %</th>
-              </tr></thead>
-              <tbody>${rankRows}</tbody>
-            </table>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><div class="card-title">Composición por categoría · ${lastPeriod}</div></div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th>Categoría</th>
-                <th class="num">Val. Libro</th>
-                <th class="num">% cartera</th>
-                <th class="num">Δ ${prevPeriod ? '%' : ''}</th>
-              </tr></thead>
-              <tbody>${compRows}</tbody>
-            </table>
-          </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Composición por categoría · ${lastPeriod}</div></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Categoría</th>
+              <th class="num">Val. Libro</th>
+              <th class="num">% cartera</th>
+              <th class="num">Δ ${prevPeriod ? '%' : ''}</th>
+            </tr></thead>
+            <tbody>${compRows}</tbody>
+          </table>
         </div>
       </div>
 
