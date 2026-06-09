@@ -5956,27 +5956,32 @@ function renderEvolucion() {
 
     <!-- Headline KPIs -->
     <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))">
-      <div class="kpi accent">
+      <div class="kpi accent kpi-clickable" data-kpi-evo="inicio">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Período inicial</div>
         <div class="value" style="font-size:18px">${fmtPeriod(firstP)}</div>
         <div class="sublabel">${fmtMoney(sysFirst)}</div>
       </div>
-      <div class="kpi accent">
+      <div class="kpi accent kpi-clickable" data-kpi-evo="fin">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Período final</div>
         <div class="value" style="font-size:18px">${fmtPeriod(lastP)}</div>
         <div class="sublabel">${fmtMoney(sysLast)}</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-evo="delta">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Variación absoluta</div>
         <div class="value ${sysClass}" style="font-size:20px">${sysDelta > 0 ? '+' : ''}${fmtMoney(sysDelta)}</div>
         <div class="sublabel">${periods.length} períodos</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-evo="deltapct">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Variación %</div>
         <div class="value ${sysClass}" style="font-size:22px">${sysDelta > 0 ? '+' : ''}${sysPct.toFixed(1)}%</div>
         <div class="sublabel">vs período inicial</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-evo="pico">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Pico histórico</div>
         <div class="value" style="font-size:18px">${fmtMoney(sysMax)}</div>
         <div class="sublabel">${fmtPeriod(periods[sysTotals.indexOf(sysMax)])}</div>
@@ -6052,6 +6057,51 @@ function renderEvolucion() {
     EVOLUCION_GROUPING = e.target.value;
     renderEvolucion();
   });
+
+  // Wire de KPIs clickeables de Evolución temporal
+  const evoExplanations = {
+    inicio: {
+      titulo: 'Período inicial',
+      contenido: `<p><strong>Qué es:</strong> el primer mes (AAAAMM) contenido en el set de períodos activo. Se muestra el monto agregado del sistema en ese mes (suma del Val. Libro de todas las CFI cargadas en B.2).</p>
+      <p><strong>De dónde sale:</strong> mínimo del set <code>activePeriods()</code> y total agregado de B.2 para ese período.</p>
+      <p><strong>Cómo leerlo:</strong> es el ancla de comparación para todas las variaciones (Δ absoluto y Δ %). Si filtras o deseleccionas períodos arriba, el "inicial" cambia y todas las variaciones se recalculan automáticamente.</p>`
+    },
+    fin: {
+      titulo: 'Período final',
+      contenido: `<p><strong>Qué es:</strong> el último mes (AAAAMM) del set de períodos activo. Se muestra el monto agregado del sistema en ese mes.</p>
+      <p><strong>De dónde sale:</strong> máximo del set <code>activePeriods()</code> y total agregado de B.2 para ese período.</p>
+      <p><strong>Cómo leerlo:</strong> es el cierre de la ventana de análisis. Junto con el período inicial define el rango contra el cual se calculan las variaciones del sistema y los rankings de "Top crecimiento / Top caída".</p>`
+    },
+    delta: {
+      titulo: 'Variación absoluta del sistema',
+      contenido: `<p><strong>Qué es:</strong> diferencia en pesos chilenos entre el monto agregado del último período y el del primer período del rango activo. Mide el flujo neto del sistema en CFI (entradas - salidas + apreciación).</p>
+      <p><strong>De dónde sale:</strong> <code>sysLast − sysFirst</code> sobre los totales agregados de B.2.</p>
+      <p><strong>Cómo leerlo:</strong> verde si el sistema creció; rojo si cayó. El sublabel indica cuántos períodos hay en el rango — más períodos = ventana más larga, no necesariamente más crecimiento.</p>`
+    },
+    deltapct: {
+      titulo: 'Variación porcentual del sistema',
+      contenido: `<p><strong>Qué es:</strong> la variación absoluta expresada como porcentaje del período inicial. Normaliza la magnitud para comparar ventanas de distinto tamaño base.</p>
+      <p><strong>De dónde sale:</strong> <code>(sysLast − sysFirst) / sysFirst × 100</code>.</p>
+      <p><strong>Cómo leerlo:</strong> útil para comparar dinámica de crecimiento entre rangos. Para un análisis YoY (año contra año) ajusta el filtro de períodos arriba para tener solo esos dos meses extremos.</p>`
+    },
+    pico: {
+      titulo: 'Pico histórico',
+      contenido: `<p><strong>Qué es:</strong> el máximo agregado del sistema dentro del rango de períodos activo, junto con el mes en que se alcanzó.</p>
+      <p><strong>De dónde sale:</strong> <code>Math.max(...sysTotals)</code> sobre los totales mensuales agregados.</p>
+      <p><strong>Cómo leerlo:</strong> si el pico coincide con el período final, el sistema está en máximo histórico (del rango). Si el pico es un mes anterior, hay caída desde el peak — útil para detectar reversiones de tendencia.</p>`
+    }
+  };
+  setTimeout(() => {
+    const root = document.getElementById('evolucion-content');
+    if (!root) return;
+    root.querySelectorAll('.kpi-clickable[data-kpi-evo]').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = el.dataset.kpiEvo;
+        const exp = evoExplanations[key];
+        if (exp) _showKpiExplanation(exp);
+      });
+    });
+  }, 0);
 }
 
 /* =======================================================================
@@ -6084,22 +6134,26 @@ function renderExtranjero() {
   // KPIs
   const kpis = `
     <div class="kpi-grid">
-      <div class="kpi accent">
+      <div class="kpi accent kpi-clickable" data-kpi-extov="total">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Inversión total extranjera</div>
         <div class="value">${fmtMoney(totalAll)}</div>
         <div class="sublabel">${b5Files.length} archivos B.5 · ${insurers.size} compañías</div>
       </div>
-      <div class="kpi accent">
+      <div class="kpi accent kpi-clickable" data-kpi-extov="deuda">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Deuda extranjera</div>
         <div class="value">${fmtMoney(totalDeuda)}</div>
         <div class="sublabel">${deuda.length} bonos · ${(totalAll>0?(totalDeuda/totalAll*100).toFixed(1):'0')}% del total</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-extov="cuotas">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Cuotas y acciones</div>
         <div class="value">${fmtMoney(totalCuotas)}</div>
         <div class="sublabel">${cuotas.length} cuotas · ${(totalAll>0?(totalCuotas/totalAll*100).toFixed(1):'0')}% del total</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-extov="posiciones">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">N° posiciones</div>
         <div class="value">${fmtNumber(records.length)}</div>
         <div class="sublabel">deuda + cuotas extranjeras</div>
@@ -6248,6 +6302,43 @@ function renderExtranjero() {
     renderExtranjeroDetail(e.target.value);
   });
   renderExtranjeroDetail('');
+
+  // Wire de KPIs clickeables del overview Extranjero
+  const extOvExplanations = {
+    total: {
+      titulo: 'Inversión total extranjera',
+      contenido: `<p><strong>Qué es:</strong> suma del valor contable en pesos chilenos de toda la inversión que las compañías de seguros del set cargado mantienen <em>fuera de Chile</em>, al cierre del último período disponible para cada una.</p>
+      <p><strong>De dónde sale:</strong> consolidado del archivo B.5 de la CMF — columna <code>Valor Final</code>, sumando deuda + cuotas/acciones extranjeras.</p>
+      <p><strong>Cómo leerlo:</strong> el sublabel indica cuántos archivos B.5 distintos están aportando datos y cuántas compañías distintas hay representadas. El número está sujeto al filtro de períodos activo arriba.</p>`
+    },
+    deuda: {
+      titulo: 'Deuda extranjera (total agregado)',
+      contenido: `<p><strong>Qué es:</strong> agregado de la inversión en instrumentos de deuda extranjeros — bonos soberanos, corporativos, emisiones supranacionales — de todas las aseguradoras del set.</p>
+      <p><strong>De dónde sale:</strong> archivo B.5 filtrado por familia de instrumento de deuda.</p>
+      <p><strong>Cómo leerlo:</strong> el porcentaje del total indica el sesgo agregado del mercado asegurador chileno hacia renta fija internacional. Lo normal en Chile es que la deuda domine ampliamente sobre equity por la estructura de pasivos de las rentas vitalicias.</p>`
+    },
+    cuotas: {
+      titulo: 'Cuotas y acciones extranjeras (total agregado)',
+      contenido: `<p><strong>Qué es:</strong> agregado de la inversión en cuotas de fondos extranjeros, ETFs y acciones que mantienen las aseguradoras del set.</p>
+      <p><strong>De dónde sale:</strong> archivo B.5 filtrado por familia <em>Cuotas de Fondos / Acciones / ETFs</em>.</p>
+      <p><strong>Cómo leerlo:</strong> el porcentaje del total muestra el apetito agregado por renta variable internacional. Variación material entre meses suele reflejar reasignación estratégica de portafolio.</p>`
+    },
+    posiciones: {
+      titulo: 'N° posiciones extranjeras',
+      contenido: `<p><strong>Qué es:</strong> cantidad total de líneas individuales en los archivos B.5 — cada bono, cuota o acción cuenta como una posición.</p>
+      <p><strong>De dónde sale:</strong> conteo de filas en los B.5 cargados (deuda + cuotas/acciones).</p>
+      <p><strong>Cómo leerlo:</strong> es un indicador de granularidad y diversificación. Muchas posiciones pueden indicar carteras más fragmentadas; pocas posiciones grandes suelen ser exposiciones concentradas (ej. un fondo único de tamaño relevante).</p>`
+    }
+  };
+  setTimeout(() => {
+    container.querySelectorAll('.kpi-clickable[data-kpi-extov]').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = el.dataset.kpiExtov;
+        const exp = extOvExplanations[key];
+        if (exp) _showKpiExplanation(exp);
+      });
+    });
+  }, 0);
 }
 
 // Per-insurer detail for B.5: shows everything that company has invested abroad,
@@ -6436,10 +6527,10 @@ function renderExtranjeroDetail(rut) {
       </div>
 
       <div class="kpi-grid" style="margin-top:10px">
-        <div class="kpi"><div class="label">Deuda extranjera</div><div class="value">${fmtMoney(totDeuda)}</div><div class="sublabel">${deuda.length} bonos · ${totAll>0?(totDeuda/totAll*100).toFixed(1):'0'}%</div></div>
-        <div class="kpi"><div class="label">Cuotas / acciones</div><div class="value">${fmtMoney(totCuotas)}</div><div class="sublabel">${cuotas.length} cuotas · ${totAll>0?(totCuotas/totAll*100).toFixed(1):'0'}%</div></div>
-        <div class="kpi"><div class="label">Países</div><div class="value">${byPais.length}</div><div class="sublabel">${byPais.slice(0,3).map(p=>p.key).join(', ')}${byPais.length>3?'…':''}</div></div>
-        <div class="kpi"><div class="label">Monedas</div><div class="value">${byMoneda.length}</div><div class="sublabel">${byMoneda.slice(0,3).map(m=>m.key).join(', ')}${byMoneda.length>3?'…':''}</div></div>
+        <div class="kpi kpi-clickable" data-kpi-ext="deuda"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Deuda extranjera</div><div class="value">${fmtMoney(totDeuda)}</div><div class="sublabel">${deuda.length} bonos · ${totAll>0?(totDeuda/totAll*100).toFixed(1):'0'}%</div></div>
+        <div class="kpi kpi-clickable" data-kpi-ext="cuotas"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Cuotas / acciones</div><div class="value">${fmtMoney(totCuotas)}</div><div class="sublabel">${cuotas.length} cuotas · ${totAll>0?(totCuotas/totAll*100).toFixed(1):'0'}%</div></div>
+        <div class="kpi kpi-clickable" data-kpi-ext="paises"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Países</div><div class="value">${byPais.length}</div><div class="sublabel">${byPais.slice(0,3).map(p=>p.key).join(', ')}${byPais.length>3?'…':''}</div></div>
+        <div class="kpi kpi-clickable" data-kpi-ext="monedas"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Monedas</div><div class="value">${byMoneda.length}</div><div class="sublabel">${byMoneda.slice(0,3).map(m=>m.key).join(', ')}${byMoneda.length>3?'…':''}</div></div>
       </div>
 
       <div class="grid-2" style="align-items:start;margin-top:14px">
@@ -6496,6 +6587,44 @@ function renderExtranjeroDetail(rut) {
       </details>
     </div>
   `;
+
+  // Wire de los KPIs clickeables del bloque Extranjero (B.5)
+  const extExplanations = {
+    deuda: {
+      titulo: 'Deuda extranjera',
+      contenido: `<p><strong>Qué es:</strong> suma del valor contable en pesos chilenos de todos los <em>instrumentos de deuda</em> (bonos soberanos, corporativos, etc.) que la aseguradora mantiene en el extranjero al cierre del período.</p>
+      <p><strong>De dónde sale:</strong> archivo B.5 de la CMF — columna <code>Valor Final</code> de las filas clasificadas como deuda (tipo de instrumento en familia <em>Bonos / Pagarés / Letras</em>).</p>
+      <p><strong>Cómo leerlo:</strong> el porcentaje al lado muestra qué fracción del total extranjero corresponde a deuda. Una aseguradora muy cargada a deuda suele tener perfil conservador o calce de pasivos largos (rentas vitalicias).</p>
+      <p><strong>Cuidado:</strong> el monto está en CLP al tipo de cambio de cierre. Variaciones mes a mes pueden deberse a TC, no a movimiento real de cartera.</p>`
+    },
+    cuotas: {
+      titulo: 'Cuotas / acciones',
+      contenido: `<p><strong>Qué es:</strong> suma del valor contable en pesos chilenos de cuotas de fondos extranjeros y acciones que la aseguradora mantiene en el extranjero.</p>
+      <p><strong>De dónde sale:</strong> archivo B.5 — filas con tipo de instrumento de la familia <em>Cuotas de Fondos / Acciones / ETFs</em>.</p>
+      <p><strong>Cómo leerlo:</strong> el porcentaje muestra el peso relativo vs. deuda. Una cuota alta sugiere apetito por equity / renta variable internacional.</p>`
+    },
+    paises: {
+      titulo: 'Países representados',
+      contenido: `<p><strong>Qué es:</strong> cantidad de países distintos donde la aseguradora tiene exposición extranjera al cierre del período.</p>
+      <p><strong>De dónde sale:</strong> columna <code>País</code> del archivo B.5, contando valores únicos.</p>
+      <p><strong>Cómo leerlo:</strong> mayor número de países = portafolio más diversificado geográficamente. Concentración en pocos países es señal de exposición regional / soberana específica.</p>`
+    },
+    monedas: {
+      titulo: 'Monedas representadas',
+      contenido: `<p><strong>Qué es:</strong> cantidad de monedas distintas en las que están emitidos los instrumentos de la cartera extranjera.</p>
+      <p><strong>De dónde sale:</strong> columna <code>Moneda</code> del archivo B.5, contando valores únicos.</p>
+      <p><strong>Cómo leerlo:</strong> diversidad de monedas implica exposición a riesgo cambiario. USD suele dominar; presencia de EUR/GBP/JPY indica diversificación deliberada.</p>`
+    }
+  };
+  setTimeout(() => {
+    detail.querySelectorAll('.kpi-clickable[data-kpi-ext]').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = el.dataset.kpiExt;
+        const exp = extExplanations[key];
+        if (exp) _showKpiExplanation(exp);
+      });
+    });
+  }, 0);
 }
 
 
@@ -7208,8 +7337,122 @@ function renderPulsoAmeris() {
   }
 
   const growthCard = growthMoM !== null
-    ? `<div class="kpi"><div class="label">Variación vs ${fmtPeriod(prevP)}</div><div class="value" style="color:${growthMoMAbs >= 0 ? '#047857' : '#b91c1c'}">${growthMoMAbs >= 0 ? '+' : ''}${growthMoM.toFixed(2)}%</div><div class="sublabel">${growthMoMAbs >= 0 ? '+' : ''}${fmtMoney(growthMoMAbs)}</div></div>`
-    : `<div class="kpi"><div class="label">Variación temporal</div><div class="value" style="color:var(--c-muted);font-size:18px">—</div><div class="sublabel">Carga otro período para comparar</div></div>`;
+    ? `<div class="kpi kpi-clickable" data-kpi-pulso="variacion"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Variación vs ${fmtPeriod(prevP)}</div><div class="value" style="color:${growthMoMAbs >= 0 ? '#047857' : '#b91c1c'}">${growthMoMAbs >= 0 ? '+' : ''}${growthMoM.toFixed(2)}%</div><div class="sublabel">${growthMoMAbs >= 0 ? '+' : ''}${fmtMoney(growthMoMAbs)}</div></div>`
+    : `<div class="kpi kpi-clickable" data-kpi-pulso="variacion"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Variación temporal</div><div class="value" style="color:var(--c-muted);font-size:18px">—</div><div class="sublabel">Carga otro período para comparar</div></div>`;
+
+  // Diccionario de explicaciones para los KPIs de Pulso Ameris (calculadas
+  // con los valores actuales del usuario)
+  const pulsoExplanations = {
+    aum: {
+      titulo: 'AUM Ameris en seguros',
+      contenido: `
+        <p><b>¿Qué es?</b> El monto total que las compañías de seguros chilenas tienen invertido en fondos administrados por Ameris AGF en el período más reciente cargado (${fmtPeriod(lastP)}).</p>
+        <p><b>¿Cómo se calcula?</b> Sumamos el campo <code>VALOR_LIBRO</code> de todas las posiciones CFI* cuyo RUT de administradora corresponde a Ameris (o cualquiera de sus entidades canónicas).</p>
+        <p><b>¿Por qué importa?</b> Es el tamaño absoluto del negocio Ameris dentro del mercado asegurador. Métrica core del negocio.</p>
+        <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Valor actual: <b style="color:var(--c-ameris-blue)">${fmtMoney(amerisAUM)}</b> · <b>${amerisFunds.size}</b> fondos colocados · <b>${amerisInsurers.size}</b> aseguradoras clientes.</p>
+      `,
+    },
+    market_share: {
+      titulo: 'Cuota de mercado CFI',
+      contenido: `
+        <p><b>¿Qué es?</b> El porcentaje del total invertido en CFI por las cías. de seguros que corresponde a fondos administrados por Ameris.</p>
+        <p><b>¿Cómo se calcula?</b></p>
+        <p style="font-family:monospace;background:var(--c-ameris-soft);padding:8px 12px;border-radius:4px;font-size:12px">
+          Cuota = AUM Ameris / AUM CFI total del sistema × 100
+        </p>
+        <ul>
+          <li>AUM Ameris: ${fmtMoney(amerisAUM)}</li>
+          <li>AUM total CFI cargado: ${fmtMoney(totalSysLast)}</li>
+          <li>Cuota actual: <b>${amerisShare.toFixed(2)}%</b></li>
+        </ul>
+        <p><b>¿Por qué importa?</b> Posiciona a Ameris respecto al mercado. Subir cuota = ganar terreno vs competidores. Bajar = perder terreno.</p>
+        <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Nota: la cuota solo considera el universo CFI de cías. de seguros cargado en el dashboard, no el universo total del sistema chileno.</p>
+      `,
+    },
+    variacion: {
+      titulo: prevP ? `Variación vs ${fmtPeriod(prevP)}` : 'Variación temporal',
+      contenido: prevP ? `
+        <p><b>¿Qué es?</b> El cambio del AUM Ameris entre el período anterior cargado (${fmtPeriod(prevP)}) y el actual (${fmtPeriod(lastP)}).</p>
+        <p><b>¿Cómo se calcula?</b></p>
+        <p style="font-family:monospace;background:var(--c-ameris-soft);padding:8px 12px;border-radius:4px;font-size:12px">
+          Δ % = (AUM<sub>último</sub> − AUM<sub>anterior</sub>) / AUM<sub>anterior</sub> × 100
+        </p>
+        <p>Cambio en valor: <b style="color:${growthMoMAbs >= 0 ? '#047857' : '#b91c1c'}">${growthMoMAbs >= 0 ? '+' : ''}${fmtMoney(growthMoMAbs)}</b></p>
+        <p><b>¿Por qué importa?</b> Mide el ritmo de crecimiento/contracción en el corto plazo. Útil para detectar tendencias y reaccionar.</p>
+      ` : '<p>Carga al menos 2 períodos distintos para ver la variación.</p>',
+    },
+    clientes: {
+      titulo: 'Aseguradoras clientes',
+      contenido: `
+        <p><b>¿Qué es?</b> El número de compañías de seguros distintas que tienen al menos una posición en algún fondo Ameris en ${fmtPeriod(lastP)}.</p>
+        <p><b>¿Cómo se calcula?</b> Contamos los RUTs únicos de aseguradoras con posiciones cuyo administrador es Ameris.</p>
+        <p><b>¿Por qué importa?</b> Mide el <b>alcance</b> comercial. Más clientes = mejor diversificación de la cartera (menor riesgo de concentración).</p>
+        <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Clientes actuales: <b>${amerisInsurers.size}</b> de <b>${totalInsurersInSys}</b> compañías totales en el sistema cargado. Espacio para captura: <b>${totalInsurersInSys - amerisInsurers.size}</b> aseguradoras sin posiciones Ameris.</p>
+      `,
+    },
+    penetracion: {
+      titulo: 'Penetración aseguradoras',
+      contenido: `
+        <p><b>¿Qué es?</b> El porcentaje de aseguradoras del sistema cargado que tienen al menos un fondo Ameris.</p>
+        <p><b>¿Cómo se calcula?</b></p>
+        <p style="font-family:monospace;background:var(--c-ameris-soft);padding:8px 12px;border-radius:4px;font-size:12px">
+          Penetración % = Cías. clientes Ameris / Cías. totales sistema × 100
+        </p>
+        <ul>
+          <li>Clientes Ameris: ${clientList.length}</li>
+          <li>Cías. totales: ${totalInsurersInSys}</li>
+          <li>Penetración: <b>${penetration.toFixed(1)}%</b></li>
+        </ul>
+        <p><b>¿Por qué importa?</b> Mide qué tan amplio es el alcance comercial. Subir penetración = entrar en más aseguradoras (nuevos clientes). Es un indicador de oportunidad: hay ${totalInsurersInSys - clientList.length} cías. <i>sin</i> exposición a Ameris.</p>
+      `,
+    },
+    hhi: {
+      titulo: 'Concentración de clientes (HHI)',
+      contenido: `
+        <p><b>¿Qué es el HHI?</b> Índice de Herfindahl-Hirschman, una medida estándar de concentración. Mide qué tan dependiente es Ameris de pocos clientes grandes vs muchos clientes pequeños.</p>
+        <p><b>¿Cómo se calcula?</b></p>
+        <p style="font-family:monospace;background:var(--c-ameris-soft);padding:8px 12px;border-radius:4px;font-size:12px">
+          HHI = Σ (share<sub>i</sub> × 100)²
+        </p>
+        <p>donde share<sub>i</sub> es la fracción de AUM Ameris que representa cada cliente.</p>
+        <p><b>Escala de lectura:</b></p>
+        <ul>
+          <li><b style="color:#047857">Bajo (HHI &lt; 1500):</b> cartera diversificada, menor riesgo.</li>
+          <li><b style="color:#b45309">Moderado (1500-2500):</b> concentración intermedia.</li>
+          <li><b style="color:#b91c1c">Alto (&gt; 2500):</b> alta dependencia de pocos clientes grandes.</li>
+        </ul>
+        <p>Tu HHI actual: <b style="color:${hhiColor}">${Math.round(hhi)}</b> (${hhiLabel}). Top 3 clientes concentran <b>${(clientList.slice(0,3).reduce((s,c)=>s+c.valor,0)/(amerisAUM||1)*100).toFixed(0)}%</b> del AUM.</p>
+        <p><b>¿Por qué importa?</b> Si un cliente grande retira su posición, ¿qué % del AUM se va contigo? HHI alto = vulnerabilidad alta.</p>
+      `,
+    },
+    promedio: {
+      titulo: 'Posición promedio por cliente',
+      contenido: `
+        <p><b>¿Qué es?</b> El AUM Ameris dividido por el número de aseguradoras clientes. El tamaño promedio que cada cliente confía a Ameris.</p>
+        <p><b>¿Cómo se calcula?</b></p>
+        <p style="font-family:monospace;background:var(--c-ameris-soft);padding:8px 12px;border-radius:4px;font-size:12px">
+          Promedio = AUM Ameris / # Aseguradoras clientes
+        </p>
+        <ul>
+          <li>AUM Ameris: ${fmtMoney(amerisAUM)}</li>
+          <li># clientes: ${clientList.length}</li>
+          <li>Promedio: <b>${fmtMoney(amerisAUM / Math.max(1, clientList.length))}</b></li>
+        </ul>
+        <p><b>¿Por qué importa?</b> Te dice si tus clientes son grandes o pequeños "en promedio". Útil para comparar con benchmarks del sector o detectar oportunidades de upgrade.</p>
+        <p style="color:#b45309;font-size:12px;margin-top:14px"><b>Cuidado:</b> el promedio puede esconder concentración. Mejor cruzar con HHI para tener vista completa.</p>
+      `,
+    },
+    nfondos: {
+      titulo: 'N° fondos en cartera',
+      contenido: `
+        <p><b>¿Qué es?</b> El número de fondos Ameris distintos que tienen al menos una posición en alguna compañía de seguros en ${fmtPeriod(lastP)}.</p>
+        <p><b>¿Cómo se calcula?</b> Contamos las claves únicas <code>nemo + serie</code> entre las posiciones cuyo administrador es Ameris. Cada serie cuenta como un fondo distinto.</p>
+        <p><b>¿Por qué importa?</b> Mide la <b>amplitud de la oferta</b> efectivamente colocada. No es lo mismo "tener 30 fondos en cartera" que "haber colocado 30 fondos en compañías de seguros". Solo aparece lo que efectivamente compraron.</p>
+        <p style="color:var(--c-muted);font-size:12px;margin-top:14px">Fondos Ameris colocados: <b>${fundList.length}</b>.</p>
+      `,
+    },
+  };
+  window._PULSO_EXPLANATIONS = pulsoExplanations;
 
   const fundsRows = fundList.slice(0, 12).map((f, i) => `
     <tr>
@@ -7288,44 +7531,51 @@ function renderPulsoAmeris() {
       <strong style="color:var(--c-ameris-navy)">Pulso Ameris AGF</strong> · Cierre <strong>${fmtPeriod(lastP)}</strong> · ${totalInsurersInSys} compañías de seguros · ${allCFI.length} posiciones CFI en el sistema.
     </div>
 
-    <!-- KPI Row 1: AUM, Ranking, Market Share, Growth -->
+    <!-- KPI Row 1: AUM, Cuota mercado, Variación, Clientes -->
     <div class="kpi-grid">
-      <div class="kpi accent">
+      <div class="kpi accent kpi-clickable" data-kpi-pulso="aum">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">AUM Ameris en seguros</div>
         <div class="value">${fmtMoney(amerisAUM)}</div>
         <div class="sublabel">${amerisFunds.size} fondos · ${amerisInsurers.size} aseguradoras clientes</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-pulso="market_share">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Cuota de mercado CFI</div>
         <div class="value">${amerisShare.toFixed(2)}%</div>
         <div class="sublabel">del total CFI cargado · ${fmtMoney(totalSysLast)}</div>
       </div>
       ${growthCard}
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-pulso="clientes">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Aseguradoras clientes</div>
         <div class="value">${amerisInsurers.size}</div>
         <div class="sublabel">de ${totalInsurersInSys} en el sistema cargado</div>
       </div>
     </div>
 
-    <!-- KPI Row 2: Penetration, Concentration, Avg position size -->
+    <!-- KPI Row 2: Penetración, HHI, Promedio, N° fondos -->
     <div class="kpi-grid">
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-pulso="penetracion">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Penetración aseguradoras</div>
         <div class="value">${penetration.toFixed(0)}%</div>
         <div class="sublabel">${clientList.length} de ${totalInsurersInSys} aseguradoras tienen fondos Ameris</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-pulso="hhi">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Concentración de clientes (HHI)</div>
         <div class="value" style="color:${hhiColor}">${Math.round(hhi)}</div>
         <div class="sublabel">${hhiLabel} concentración · top 3 = ${clientList.slice(0,3).reduce((s,c)=>s+c.valor,0)/(amerisAUM||1)*100|0}% AUM</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-pulso="promedio">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">Posición promedio por cliente</div>
         <div class="value">${fmtMoney(amerisAUM / Math.max(1, clientList.length))}</div>
         <div class="sublabel">tamaño medio AUM por aseguradora</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-clickable" data-kpi-pulso="nfondos">
+        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
         <div class="label">N° fondos en cartera</div>
         <div class="value">${fundList.length}</div>
         <div class="sublabel">fondos Ameris distintos colocados</div>
@@ -7468,6 +7718,14 @@ function renderPulsoAmeris() {
   setTimeout(() => {
     document.querySelectorAll('.agf-mover-detail').forEach(btn => {
       btn.addEventListener('click', () => openAgfMoverDetail(btn.dataset.rut, allCFI, lastP, prevP));
+    });
+    // Wire de los KPIs clickeables de Pulso Ameris
+    document.querySelectorAll('#pulso-content .kpi-clickable[data-kpi-pulso]').forEach(el => {
+      el.addEventListener('click', () => {
+        const key = el.dataset.kpiPulso;
+        const exp = (window._PULSO_EXPLANATIONS || {})[key];
+        if (exp) _showKpiExplanation(exp);
+      });
     });
   }, 0);
 }
