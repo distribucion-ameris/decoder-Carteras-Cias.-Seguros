@@ -7435,23 +7435,6 @@ function renderPulsoAmeris() {
         <p><b>¿Por qué importa?</b> Si un cliente grande retira su posición, ¿qué % del AUM se va contigo? HHI alto = vulnerabilidad alta.</p>
       `,
     },
-    promedio: {
-      titulo: 'Posición promedio por cliente',
-      contenido: `
-        <p><b>¿Qué es?</b> El AUM Ameris dividido por el número de aseguradoras clientes. El tamaño promedio que cada cliente confía a Ameris.</p>
-        <p><b>¿Cómo se calcula?</b></p>
-        <p style="font-family:monospace;background:var(--c-ameris-soft);padding:8px 12px;border-radius:4px;font-size:12px">
-          Promedio = AUM Ameris / # Aseguradoras clientes
-        </p>
-        <ul>
-          <li>AUM Ameris: ${fmtMoney(amerisAUM)}</li>
-          <li># clientes: ${clientList.length}</li>
-          <li>Promedio: <b>${fmtMoney(amerisAUM / Math.max(1, clientList.length))}</b></li>
-        </ul>
-        <p><b>¿Por qué importa?</b> Te dice si tus clientes son grandes o pequeños "en promedio". Útil para comparar con benchmarks del sector o detectar oportunidades de upgrade.</p>
-        <p style="color:#b45309;font-size:12px;margin-top:14px"><b>Cuidado:</b> el promedio puede esconder concentración. Mejor cruzar con HHI para tener vista completa.</p>
-      `,
-    },
     nfondos: {
       titulo: 'N° fondos en cartera',
       contenido: `
@@ -7577,12 +7560,6 @@ function renderPulsoAmeris() {
         <div class="label">Concentración de clientes (HHI)</div>
         <div class="value" style="color:${hhiColor}">${Math.round(hhi)}</div>
         <div class="sublabel">${hhiLabel} concentración · top 3 = ${clientList.slice(0,3).reduce((s,c)=>s+c.valor,0)/(amerisAUM||1)*100|0}% AUM</div>
-      </div>
-      <div class="kpi kpi-clickable" data-kpi-pulso="promedio">
-        <div class="kpi-info-icon" title="Click para ver explicación">?</div>
-        <div class="label">Posición promedio por cliente</div>
-        <div class="value">${fmtMoney(amerisAUM / Math.max(1, clientList.length))}</div>
-        <div class="sublabel">tamaño medio AUM por aseguradora</div>
       </div>
       <div class="kpi kpi-clickable" data-kpi-pulso="nfondos">
         <div class="kpi-info-icon" title="Click para ver explicación">?</div>
