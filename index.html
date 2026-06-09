@@ -3851,10 +3851,11 @@ function emptyStateB2Only(tabName) {
 /* ---- General overview ---- */
 
 function renderGeneral() {
-  // Vista macro: ignorar filtros de período/AGF para poder comparar deltas
-  // entre el último y el penúltimo período cargados (de lo contrario
-  // prevPeriodHs queda vacío y las tablas de movers no muestran nada).
-  const hs = activeHoldings(true);
+  // Respeta el filtro multi-selector: si el usuario deseleccionó algún
+  // período, las métricas reflejan SOLO los períodos visibles. Antes
+  // ignoraba filtros para vista macro, pero el usuario espera que un
+  // filtro afecte todo el dashboard de forma consistente.
+  const hs = activeHoldings();
   const container = document.getElementById('general-content');
   if (STATE.files.length === 0) {
     container.innerHTML = emptyState('Carga archivos B.2 (cartera local) o B.5 (extranjero) desde la CMF para comenzar.');
@@ -3876,12 +3877,11 @@ function renderGeneral() {
   // de abajo se calculan sobre `lastPeriodHs`, no sobre el agregado `hs`
   // (que sumaría todos los períodos cargados y daría números inflados).
 
-  // Cálculo de períodos cargados: si hay 2+ podemos mostrar deltas.
-  // Comparamos PRIMER período CON DATOS REALES vs ÚLTIMO (historia completa).
-  // No basta usar periodsLoaded[0] porque un período puede estar en STATE.files
-  // sin contener cuotas CFI (sólo acciones o sólo bonos B.5). En ese caso
-  // hay que avanzar al siguiente período hasta encontrar uno con datos.
-  const periodsLoaded = allPeriods();  // ordenados asc
+  // Cálculo de períodos disponibles (respetando filtro multi-selector).
+  // Comparamos PRIMER período CON DATOS REALES vs ÚLTIMO. Si el usuario
+  // deseleccionó algunos, esos no aparecen acá: los KPIs reflejan solo
+  // los períodos visibles, dinámicamente.
+  const periodsLoaded = activePeriods();  // ordenados asc, solo los seleccionados
   const lastPeriod = periodsLoaded[periodsLoaded.length - 1] || '—';
   // Buscar el primer período con al menos una compañía cargada
   let prevPeriod = null;
@@ -7769,11 +7769,11 @@ function _generatePdfReport() {
   };
 
   // === Recomputar datos ===
-  // Ignorar filtros (vista macro siempre vs los últimos 2 períodos cargados).
-  const hs = activeHoldings(true);
-  const periodsLoaded = allPeriods();
+  // Respeta filtro multi-selector — el PDF refleja la selección del usuario.
+  const hs = activeHoldings();
+  const periodsLoaded = activePeriods();
   const lastP = periodsLoaded[periodsLoaded.length - 1] || '—';
-  // Comparamos primer período cargado vs último (historia completa).
+  // Comparamos primer período DISPONIBLE vs último (en el rango filtrado).
   const prevP = periodsLoaded.length >= 2 ? periodsLoaded[0] : null;
   const lastHs = hs.filter(h => h._periodo === lastP);
   const prevHs = prevP ? hs.filter(h => h._periodo === prevP) : [];
