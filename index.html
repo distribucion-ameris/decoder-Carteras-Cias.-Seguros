@@ -1132,8 +1132,34 @@
     border-bottom: 1px dashed var(--c-border);
   }
   .ic-filter-agf { display: flex; align-items: center; gap: 8px; }
-  .ic-filter-agf .ctrl-label { margin: 0; }
-  .ic-filter-agf select { min-width: 240px; }
+  .ic-filter-agf .ctrl-label { margin: 0; font-size: 11.5px; color: var(--c-muted); }
+  .ic-filter-agf select { min-width: 280px; font-size: 12.5px; }
+  /* Barra de filtros visible siempre dentro de la card abierta */
+  .ic-filters-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    background: var(--c-ameris-soft);
+    border: 1px solid var(--c-ameris-pale);
+    border-radius: var(--r-sm);
+  }
+  .ic-filter-clear {
+    background: white;
+    border: 1px solid var(--c-ameris-blue);
+    color: var(--c-ameris-blue);
+    padding: 4px 11px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ic-filter-clear:hover { background: var(--c-ameris-blue); color: white; }
+  .ic-filter-active { font-size: 11.5px; color: var(--c-muted); }
+  .ic-filter-active strong { color: var(--c-ameris-blue); }
   .ic-meta {
     margin-left: auto;
     font-size: 11.5px;
@@ -5210,17 +5236,14 @@ function renderInsurerCardBody(rut) {
   }
   const periodsHere = Array.from(new Set(recs.map(r => r._periodo))).sort();
   const lastP = periodsHere[periodsHere.length - 1];
-  const lastRecs = recs.filter(r => r._periodo === lastP);
-  const totLibro = lastRecs.reduce((s, h) => s + h.valLibro, 0);
+  const lastRecsAll = recs.filter(r => r._periodo === lastP);
 
-  // === Resumen ejecutivo: agregados rápidos del último período ===
-  const fundsCount = new Set(lastRecs.map(h => h.nemo + '||' + (h.serie || ''))).size;
-  const positionsCount = lastRecs.length;
-
-  // AGFs presentes en esta compañía (último período)
+  // AGFs presentes en ESTA compañía en el último período (opciones del filtro).
+  // Siempre se calcula sobre lastRecsAll (sin filtrar) para que el dropdown
+  // muestre todas las AGFs disponibles, incluso cuando se filtra una.
   const agfsForFilter = (() => {
     const m = new Map();
-    for (const h of lastRecs) {
+    for (const h of lastRecsAll) {
       const cr = canonicalAgfRut(h.rutEmisor);
       const name = canonicalAgfName(h.rutEmisor);
       const cur = m.get(cr) || { rut: cr, name, valor: 0, fondos: new Set() };
@@ -5231,15 +5254,26 @@ function renderInsurerCardBody(rut) {
     return Array.from(m.values()).sort((a, b) => b.valor - a.valor);
   })();
 
-  // Distribución por categoría
+  // Filtro AGF activo → aplicar a TODO el resumen ejecutivo (no solo a las
+  // tablas detalladas). Esto era el bug: antes los KPIs y la distribución
+  // mostraban el total de la compañía aunque el usuario filtrara por AGF.
+  const lastRecs = INSURER_AGF_FILTER
+    ? lastRecsAll.filter(h => canonicalAgfRut(h.rutEmisor) === INSURER_AGF_FILTER)
+    : lastRecsAll;
+  const recsFiltered = INSURER_AGF_FILTER
+    ? recs.filter(h => canonicalAgfRut(h.rutEmisor) === INSURER_AGF_FILTER)
+    : recs;
+
+  const totLibro = lastRecs.reduce((s, h) => s + h.valLibro, 0);
+
+  // === Resumen ejecutivo: agregados rápidos del último período (filtrado) ===
+  const fundsCount = new Set(lastRecs.map(h => h.nemo + '||' + (h.serie || ''))).size;
+  const positionsCount = lastRecs.length;
+
+  // Distribución por categoría (también filtrada)
   const catTotals = {};
   for (const h of lastRecs) catTotals[h.category] = (catTotals[h.category] || 0) + h.valLibro;
   const catSorted = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
-
-  let recsFiltered = recs;
-  if (INSURER_AGF_FILTER) {
-    recsFiltered = recs.filter(h => canonicalAgfRut(h.rutEmisor) === INSURER_AGF_FILTER);
-  }
 
   const periodsLabel = periodsHere.length > 1
     ? `${fmtPeriod(periodsHere[0])} → ${fmtPeriod(lastP)} (${periodsHere.length} períodos)`
@@ -5302,28 +5336,68 @@ function renderInsurerCardBody(rut) {
     `;
   }).join('');
 
-  // Top 5 AGFs (resumen)
-  const top5Agfs = agfsForFilter.slice(0, 5);
-  const otherAgfsSum = agfsForFilter.slice(5).reduce((s, a) => s + a.valor, 0);
-  const agfRows = top5Agfs.map((a, i) => {
-    const pct = totLibro > 0 ? a.valor / totLibro * 100 : 0;
-    return `
-      <div class="ic-agf-row">
-        <span class="ic-agf-rank">${i + 1}</span>
-        <span class="ic-agf-name">${escapeHtml(a.name)}</span>
-        <span class="ic-agf-funds">${a.fondos.size} fondo${a.fondos.size !== 1 ? 's' : ''}</span>
-        <span class="ic-agf-pct">${pct.toFixed(1)}%</span>
-        <span class="ic-agf-val">${fmtMoney(a.valor)}</span>
-      </div>
-    `;
-  }).join('') + (otherAgfsSum > 0 ? `
-    <div class="ic-agf-row is-other">
-      <span class="ic-agf-rank"></span>
-      <span class="ic-agf-name">+ ${agfsForFilter.length - 5} AGFs más</span>
-      <span class="ic-agf-funds"></span>
-      <span class="ic-agf-pct">${(otherAgfsSum / totLibro * 100).toFixed(1)}%</span>
-      <span class="ic-agf-val">${fmtMoney(otherAgfsSum)}</span>
-    </div>` : '');
+  // Bloque secundario: si hay filtro AGF activo, muestra los FONDOS de esa
+  // AGF (más útil que "Top 5 AGFs" que ya sabes cuál es). Sin filtro,
+  // muestra el ranking de las 5 AGFs principales de la compañía.
+  let agfRows = '';
+  if (INSURER_AGF_FILTER) {
+    // Lista de fondos de la AGF filtrada
+    const fundsInAgf = new Map();
+    for (const h of lastRecs) {
+      const key = h.nemo + '||' + (h.serie || '');
+      const cur = fundsInAgf.get(key) || {
+        nemo: h.nemo, serie: h.serie,
+        friendly: friendlyForNemo(h.nemo) || h.nemo,
+        valor: 0,
+      };
+      cur.valor += h.valLibro || 0;
+      fundsInAgf.set(key, cur);
+    }
+    const fundsArr = Array.from(fundsInAgf.values()).sort((a, b) => b.valor - a.valor);
+    const top5Funds = fundsArr.slice(0, 5);
+    const otherFundsSum = fundsArr.slice(5).reduce((s, f) => s + f.valor, 0);
+    agfRows = top5Funds.map((f, i) => {
+      const pct = totLibro > 0 ? f.valor / totLibro * 100 : 0;
+      return `
+        <div class="ic-agf-row">
+          <span class="ic-agf-rank">${i + 1}</span>
+          <span class="ic-agf-name">${escapeHtml(f.friendly)}${f.serie ? ` <span style="color:var(--c-muted);font-size:10.5px">· ${escapeHtml(f.serie)}</span>` : ''}</span>
+          <span class="ic-agf-funds"></span>
+          <span class="ic-agf-pct">${pct.toFixed(1)}%</span>
+          <span class="ic-agf-val">${fmtMoney(f.valor)}</span>
+        </div>
+      `;
+    }).join('') + (otherFundsSum > 0 ? `
+      <div class="ic-agf-row is-other">
+        <span class="ic-agf-rank"></span>
+        <span class="ic-agf-name">+ ${fundsArr.length - 5} fondos más</span>
+        <span class="ic-agf-funds"></span>
+        <span class="ic-agf-pct">${(otherFundsSum / totLibro * 100).toFixed(1)}%</span>
+        <span class="ic-agf-val">${fmtMoney(otherFundsSum)}</span>
+      </div>` : '');
+  } else {
+    const top5Agfs = agfsForFilter.slice(0, 5);
+    const otherAgfsSum = agfsForFilter.slice(5).reduce((s, a) => s + a.valor, 0);
+    agfRows = top5Agfs.map((a, i) => {
+      const pct = totLibro > 0 ? a.valor / totLibro * 100 : 0;
+      return `
+        <div class="ic-agf-row">
+          <span class="ic-agf-rank">${i + 1}</span>
+          <span class="ic-agf-name">${escapeHtml(a.name)}</span>
+          <span class="ic-agf-funds">${a.fondos.size} fondo${a.fondos.size !== 1 ? 's' : ''}</span>
+          <span class="ic-agf-pct">${pct.toFixed(1)}%</span>
+          <span class="ic-agf-val">${fmtMoney(a.valor)}</span>
+        </div>
+      `;
+    }).join('') + (otherAgfsSum > 0 ? `
+      <div class="ic-agf-row is-other">
+        <span class="ic-agf-rank"></span>
+        <span class="ic-agf-name">+ ${agfsForFilter.length - 5} AGFs más</span>
+        <span class="ic-agf-funds"></span>
+        <span class="ic-agf-pct">${(otherAgfsSum / totLibro * 100).toFixed(1)}%</span>
+        <span class="ic-agf-val">${fmtMoney(otherAgfsSum)}</span>
+      </div>` : '');
+  }
 
   // Wire controles del nivel 2 (toggle, filtro, expand button) tras innerHTML
   setTimeout(() => {
@@ -5359,6 +5433,15 @@ function renderInsurerCardBody(rut) {
         renderInsurer();
       });
     }
+    // Botón "Limpiar filtro" (solo aparece cuando hay filtro activo)
+    const clearBtn = document.getElementById('ic-agf-clear-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
+    if (clearBtn) {
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        INSURER_AGF_FILTER = '';
+        renderInsurer();
+      });
+    }
     // Toggle del detalle completo (nivel 2)
     const detailBtn = document.getElementById('ic-show-detail-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
     const detailContainer = document.getElementById('ic-detail-container-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
@@ -5377,14 +5460,30 @@ function renderInsurerCardBody(rut) {
 
   return `
     <div class="ic-body-inner" onclick="event.stopPropagation()">
+      <!-- Filtros visibles siempre (afectan los KPIs y todo el resumen) -->
+      <div class="ic-filters-bar">
+        <div class="ic-filter-agf">
+          <span class="ctrl-label">Filtrar AGF:</span>
+          <select id="ic-agf-filter-${safeId}">
+            <option value="">Todas las AGFs de esta compañía (${agfsForFilter.length})</option>
+            ${agfFilterOptions}
+          </select>
+        </div>
+        ${INSURER_AGF_FILTER ? `
+          <button type="button" class="ic-filter-clear" id="ic-agf-clear-${safeId}">✕ Limpiar filtro</button>
+          <span class="ic-filter-active">Mostrando solo: <strong>${escapeHtml(filterAgfName)}</strong></span>
+        ` : ''}
+        <span class="ic-meta">${periodsLabel}</span>
+      </div>
+
       ${summaryStats}
       <div class="ic-summary-grid">
         <div class="ic-summary-block">
-          <div class="ic-summary-block-title">Distribución por categoría</div>
+          <div class="ic-summary-block-title">Distribución por categoría${INSURER_AGF_FILTER ? ` · ${escapeHtml(filterAgfName)}` : ''}</div>
           <div class="ic-dist-list">${catRows}</div>
         </div>
         <div class="ic-summary-block">
-          <div class="ic-summary-block-title">Top 5 AGFs · ${fmtPeriod(lastP)}</div>
+          <div class="ic-summary-block-title">${INSURER_AGF_FILTER ? `Fondos de ${escapeHtml(filterAgfName)} · ${fmtPeriod(lastP)}` : `Top 5 AGFs · ${fmtPeriod(lastP)}`}</div>
           <div class="ic-agf-list">${agfRows}</div>
         </div>
       </div>
@@ -5398,17 +5497,6 @@ function renderInsurerCardBody(rut) {
           <div class="view-toggle" role="tablist">
             <button type="button" class="vt-btn ic-vt-btn ${INSURER_VIEW_MODE === 'category' ? 'active' : ''}" data-mode="category">Por categoría</button>
             <button type="button" class="vt-btn ic-vt-btn ${INSURER_VIEW_MODE === 'agf' ? 'active' : ''}" data-mode="agf">Por AGF</button>
-          </div>
-          <div class="ic-filter-agf">
-            <span class="ctrl-label">Filtrar AGF:</span>
-            <select id="ic-agf-filter-${safeId}">
-              <option value="">Todas (${agfsForFilter.length})</option>
-              ${agfFilterOptions}
-            </select>
-          </div>
-          <div class="ic-meta">
-            ${periodsLabel}
-            ${INSURER_AGF_FILTER ? ` · <span style="color:var(--c-ameris-blue)">${escapeHtml(filterAgfName)}</span>` : ''}
           </div>
         </div>
         <div class="ic-sections">
