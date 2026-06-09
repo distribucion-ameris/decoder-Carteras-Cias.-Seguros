@@ -7235,9 +7235,20 @@ function renderPulsoAmeris() {
   // el período actual y en el anterior. Identifica AGFs cuyo dinero está
   // creciendo o cayendo en las carteras de las aseguradoras.
   // Útil para entender competencia: en qué AGFs las cías. están confiando más.
+  //
+  // OJO: `lastCFI` arriba es la foto consolidada (mosaico por aseguradora).
+  // Para el análisis MoM necesitamos una comparación coherente: solo cías.
+  // que presentaron AMBOS períodos exactos (lastP y prevP). Si no se hace
+  // así, las cías. cuya última foto es prevP aportan la misma fila a ambos
+  // lados (delta 0), y solo las que presentaron lastP generan delta — todos
+  // positivos — lo que da el falso "Total saliente: 0".
   let agfMovers = null;
   if (allP.length >= 2 && prevP) {
-    const prevCFI = allCFI.filter(h => h._periodo === prevP);
+    const insurersInLast = new Set(allCFI.filter(h => h._periodo === lastP).map(h => h._insurerRut));
+    const insurersInPrev = new Set(allCFI.filter(h => h._periodo === prevP).map(h => h._insurerRut));
+    const insurersInBoth = new Set([...insurersInLast].filter(i => insurersInPrev.has(i)));
+    const lastCFI_mom = allCFI.filter(h => h._periodo === lastP && insurersInBoth.has(h._insurerRut));
+    const prevCFI = allCFI.filter(h => h._periodo === prevP && insurersInBoth.has(h._insurerRut));
     const aggrByAgf = (recs) => {
       const m = new Map();
       for (const h of recs) {
@@ -7254,7 +7265,7 @@ function renderPulsoAmeris() {
       }
       return m;
     };
-    const lastAgfMap = aggrByAgf(lastCFI);
+    const lastAgfMap = aggrByAgf(lastCFI_mom);
     const prevAgfMap = aggrByAgf(prevCFI);
 
     // AGFs con exposición en último período
@@ -7287,7 +7298,7 @@ function renderPulsoAmeris() {
     const totalOut = movements.reduce((s, m) => s + Math.min(0, m.deltaAbs), 0)
                    + lostAgfs.reduce((s, a) => s + a.deltaAbs, 0);
     const netFlow = totalIn + totalOut;
-    agfMovers = { topGrowers, topReducers, totalIn, totalOut, netFlow, prevP, lastP };
+    agfMovers = { topGrowers, topReducers, totalIn, totalOut, netFlow, prevP, lastP, nInsurersInBoth: insurersInBoth.size };
   }
 
   // HHI (Herfindahl-Hirschman) de concentración de clientes — métrica de riesgo de cliente
@@ -7615,6 +7626,7 @@ function renderPulsoAmeris() {
             <div style="margin-top:6px;font-size:12px;color:var(--c-muted)">
               Total entrante (AGFs que ganaron exposición): <strong style="color:#047857">+${fmtMoney(agfMovers.totalIn)}</strong> ·
               Total saliente (AGFs que perdieron): <strong style="color:#b91c1c">${fmtMoney(agfMovers.totalOut)}</strong>
+              <br>Comparación basada en <strong>${agfMovers.nInsurersInBoth}</strong> aseguradoras que presentaron ambos períodos (${fmtPeriod(agfMovers.prevP)} y ${fmtPeriod(agfMovers.lastP)}).
             </div>
           </div>
           <div class="grid-2" style="align-items:start;padding:0 12px 12px">
