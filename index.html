@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Forzar al browser a re-validar el HTML en cada carga (evita ver
+     versiones cacheadas tras un deploy). Los archivos JS/JSON siguen
+     usando cache buster ?v=... así que no se invalidan innecesariamente. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Decoder Cartera Inversiones B.2 — Compañías de Seguros · Ameris AGF</title>
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
@@ -1795,6 +1801,7 @@
     <div class="credits">
       <span>Ameris AGF · Herramienta interna · v1.2</span>
       <span class="contact">Av. El Golf 82, Piso 5, Las Condes, Santiago · <a href="mailto:contacto@ameris.cl">contacto@ameris.cl</a></span>
+      <a href="#" id="btn-hard-refresh" style="color:var(--c-muted);font-size:10.5px;text-decoration:none;border:1px solid var(--c-border);padding:3px 9px;border-radius:4px" title="Limpia todos los cachés del navegador y descarga la versión más reciente del dashboard">↻ Forzar actualización</a>
     </div>
   </footer>
 </div>
@@ -1807,13 +1814,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
 
 <!-- Embedded mappings (RUT_AGF_MAP, NEMO_NAME_MAP) -->
-<script src="maps.js?v=2026-05-14g"></script>
+<script src="maps.js?v=2026-06-09a"></script>
 <!-- Tabla autoritativa nemo → administradora real + nombre fondo (de NOMBRE_EMISOR B.5) -->
-<script src="nemo_authority.js?v=2026-05-12a"></script>
+<script src="nemo_authority.js?v=2026-06-09a"></script>
 <!-- FUENTE AUTORITATIVA MÁXIMA: datos scrapeados de www.bolsadesantiago.com
      Generado offline con Scraper/scraper_bolsa.py + merge_to_maps.py.
      Si el archivo no existe (aún no ejecutaste el scraper), simplemente no se carga. -->
-<script src="bolsa_overrides.js?v=2026-05-12b" onerror="this.remove()"></script>
+<script src="bolsa_overrides.js?v=2026-06-09a" onerror="this.remove()"></script>
 
 <script>
 /* =======================================================================
@@ -7316,6 +7323,44 @@ function setupControls() {
     renderAll();
     showSuccessToast('Archivos eliminados');
   });
+
+  // Botón "Forzar actualización" en el footer: limpia todos los caches
+  // del browser (service worker, fetch cache, etc.) y descarga la
+  // versión más reciente del dashboard desde GitHub Pages. Útil cuando
+  // el browser sigue mostrando una versión vieja tras un deploy.
+  const btnHardRefresh = document.getElementById('btn-hard-refresh');
+  if (btnHardRefresh) {
+    btnHardRefresh.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!confirm(
+        'Esto va a:\n' +
+        '• Limpiar todos los cachés del navegador para este dashboard\n' +
+        '• Desregistrar el service worker (si existe)\n' +
+        '• Recargar la página desde cero (versión más reciente del repositorio)\n\n' +
+        'Los archivos cargados (B.2/B.5) NO se borran — siguen en IndexedDB.\n\n' +
+        '¿Continuar?'
+      )) return;
+      try {
+        // 1) Limpiar Cache API (usado por service workers)
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+        // 2) Desregistrar service workers
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+      } catch (err) {
+        console.warn('Hard refresh cleanup error:', err);
+      }
+      // 3) Forzar reload sin cache (location.reload(true) está deprecated,
+      // pero agregamos un cache buster a la URL)
+      const url = new URL(window.location.href);
+      url.searchParams.set('_t', Date.now());
+      window.location.replace(url.toString());
+    });
+  }
   document.getElementById('btn-export-csv').addEventListener('click', () => {
     exportCSV();
     showSuccessToast('CSV descargado');
