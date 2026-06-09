@@ -3141,6 +3141,15 @@ function allPeriods() {
   return Array.from(set).sort();
 }
 
+// Períodos disponibles tras aplicar el filtro multi-selector. Usar esta
+// función en vistas que respetan el filtro (Pulso Ameris, Por Compañía,
+// Evolución, etc.). Si el usuario deselecciona períodos, esos no
+// aparecen acá → 'último período' = último DISPONIBLE tras filtro.
+function activePeriods() {
+  const set = new Set(activeFiles().map(f => f.periodo));
+  return Array.from(set).sort();
+}
+
 /* =======================================================================
    FORMATTERS
    ======================================================================= */
@@ -4531,7 +4540,9 @@ function renderAGFDetail(rut, hs) {
   const totalInsurers = new Set();
   breakdown.forEach(f => f.rows.forEach(r => totalInsurers.add(r.insurerRut)));
   // Total Val. Libro at the LATEST period only — gives a current-AUM number
-  const allPeriodsLoaded = allPeriods();
+  // Respeta filtro multi-selector: si deseleccionó el último período cargado,
+  // usar el último disponible tras filtro.
+  const allPeriodsLoaded = activePeriods();
   const lastPeriod = allPeriodsLoaded[allPeriodsLoaded.length - 1];
   let totalLastPeriod = 0;
   for (const f of breakdown) {
@@ -5219,13 +5230,14 @@ function renderInstruments() {
 // `entityType` ∈ 'agf' | 'fund' | 'insurer'.
 // Para cada período, recompone la lista temporalmente (selectedPeriod=período) y agrega.
 function buildEvolutionSeries(entityType) {
-  const periods = allPeriods();
-  const savedPeriod = STATE.selectedPeriod;
+  // Respeta filtro multi-selector: si el usuario deseleccionó algunos
+  // períodos, la evolución solo muestra los seleccionados.
+  const periods = activePeriods();
+  const allHs = activeHoldings();
   const byEntity = new Map();
 
   for (const period of periods) {
-    STATE.selectedPeriod = period;
-    const hs = activeHoldings();
+    const hs = allHs.filter(h => h._periodo === period);
     for (const h of hs) {
       let key, label, sublabel;
       if (entityType === 'agf') {
@@ -5246,7 +5258,6 @@ function buildEvolutionSeries(entityType) {
       e.perPeriod[period] = (e.perPeriod[period] || 0) + (h.valLibro || 0);
     }
   }
-  STATE.selectedPeriod = savedPeriod;  // restore
   return { periods, byEntity };
 }
 
@@ -5258,7 +5269,7 @@ function renderEvolucion() {
     container.innerHTML = emptyStateB2Only('la evolución temporal');
     return;
   }
-  const periods = allPeriods();
+  const periods = activePeriods();
   if (periods.length < 2) {
     container.innerHTML = `
       <div class="notice">
@@ -6376,8 +6387,10 @@ function renderPulsoAmeris() {
     return;
   }
 
-  // Tomar el último período cargado para el snapshot principal
-  const allP = allPeriods();
+  // Tomar el último período disponible tras el filtro multi-selector.
+  // Importante usar activePeriods() (no allPeriods()) — si el usuario
+  // deseleccionó el período más reciente, ese no debe usarse como 'último'.
+  const allP = activePeriods();
   const lastP = allP[allP.length - 1];
   const lastCFI = allCFI.filter(h => h._periodo === lastP);
   const totalSysLast = lastCFI.reduce((s, h) => s + h.valLibro, 0);
