@@ -581,7 +581,91 @@
     font-size: 12.5px;
     min-width: 0;
   }
-  .actions-bar #period-select { min-width: 110px; }
+  /* === Selector múltiple de períodos === */
+  .period-multi-wrap { position: relative; }
+  .period-multi-trigger {
+    background: white;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-sm);
+    padding: 6px 14px 6px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--c-text);
+    cursor: pointer;
+    min-width: 180px;
+    text-align: left;
+    transition: border-color .12s, background .12s;
+    position: relative;
+  }
+  .period-multi-trigger::after {
+    content: "▾";
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--c-ameris-blue);
+    font-size: 11px;
+  }
+  .period-multi-trigger:hover { border-color: var(--c-ameris-blue-2); background: #fafbfd; }
+  .period-multi-trigger.has-filter { border-color: var(--c-ameris-blue); background: var(--c-ameris-soft); font-weight: 600; }
+  .period-multi-panel {
+    position: absolute;
+    top: 100%; left: 0;
+    margin-top: 4px;
+    background: white;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-sm);
+    box-shadow: 0 8px 24px rgba(10,43,94,0.12);
+    z-index: 1000;
+    min-width: 280px;
+    padding: 12px;
+  }
+  .period-multi-quick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .pm-quick {
+    background: var(--c-ameris-soft);
+    border: 1px solid var(--c-ameris-pale);
+    border-radius: 3px;
+    padding: 3px 9px;
+    font-size: 11px;
+    color: var(--c-ameris-navy);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .pm-quick:hover { background: var(--c-ameris-pale); }
+  .period-multi-list {
+    max-height: 280px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pm-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .pm-row:hover { background: #f4f7fc; }
+  .pm-row input[type="checkbox"] { cursor: pointer; margin: 0; }
+  .period-multi-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--c-border);
+    justify-content: flex-end;
+  }
+  .period-multi-actions .btn { padding: 5px 14px; font-size: 12px; }
   .actions-bar #agf-filter   { min-width: 180px; max-width: 240px; }
   /* Separador visual sutil entre el grupo de filtros y los botones de acción */
   .actions-bar .ab-divider {
@@ -1716,9 +1800,24 @@
         <input type="search" id="global-search" placeholder="🔍 Buscar fondo, AGF o aseguradora…" autocomplete="off">
         <div id="search-results" class="search-results" style="display:none"></div>
       </div>
-      <div class="ctrl-group" title="Filtra por mes específico (formato AAAA-MM) o muestra todos los períodos cargados">
+      <div class="ctrl-group" title="Elegí qué períodos incluir en el análisis. Click para abrir el selector múltiple.">
         <span class="ctrl-label">Período</span>
-        <select id="period-select"><option value="">Todos</option></select>
+        <div class="period-multi-wrap">
+          <button type="button" id="period-multi-btn" class="period-multi-trigger">Todos los períodos</button>
+          <div id="period-multi-panel" class="period-multi-panel" style="display:none">
+            <div class="period-multi-quick">
+              <button type="button" data-action="all" class="pm-quick">Todos</button>
+              <button type="button" data-action="last12" class="pm-quick">Últimos 12 meses</button>
+              <button type="button" data-action="lastYear" class="pm-quick">Último año cargado</button>
+              <button type="button" data-action="clear" class="pm-quick">Limpiar</button>
+            </div>
+            <div id="period-multi-list" class="period-multi-list"></div>
+            <div class="period-multi-actions">
+              <button type="button" id="period-multi-apply" class="btn">Aplicar</button>
+              <button type="button" id="period-multi-close" class="btn btn-secondary">Cerrar</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="ctrl-group" title="Filtra para ver sólo posiciones de una AGF/emisor específico">
         <span class="ctrl-label">AGF</span>
@@ -1735,8 +1834,6 @@
       <span class="ab-divider"></span>
       <button class="btn btn-secondary" type="button" id="btn-quality" title="Auditoría de los datos cargados: nemos sin nombre, AGFs no mapeadas, posibles truncamientos y conflictos">Calidad de datos<span id="quality-badge" style="display:none;margin-left:6px;padding:1px 7px;border-radius:9px;background:#0891b2;color:white;font-size:10.5px;font-weight:700;line-height:14px;vertical-align:1px"></span></button>
       <button class="btn btn-secondary" type="button" id="btn-export-historico" title="Descarga un JSON con todos los archivos cargados. Subilo al repo como Dashboard/historico-compartido.json y todos los usuarios lo recibirán automáticamente al recargar.">Exportar histórico</button>
-      <button class="btn btn-secondary" type="button" id="btn-export-pdf" title="Generar PDF del Resumen General (usa la función Imprimir del navegador → Guardar como PDF)">PDF del Resumen</button>
-      <button class="btn btn-secondary" type="button" id="btn-export-csv" title="Descarga los datos visibles como archivo CSV (compatible con Excel)">Exportar CSV</button>
       <button class="btn btn-secondary" type="button" id="btn-clear" title="Borra todos los archivos cargados del historial (acción no reversible)">Limpiar datos</button>
     </div>
   </div>
@@ -2350,7 +2447,8 @@ function parseB5File(lines, filename) {
 let STATE = {
   files: [],          // [{ fileName, insurerRut, insurerName, periodo, holdings/b5Records }]
   errors: [],         // file load errors
-  selectedPeriod: '', // empty = all
+  selectedPeriod: '', // legacy single-period filter (mantenido por compat)
+  selectedPeriodsSet: new Set(),  // multi-select: si vacío → todos; si tiene valores → solo esos
   agfFilter: '',      // '' | 'ameris' | 'rut:RUT_EMISOR'
 };
 
@@ -2917,7 +3015,12 @@ async function loadState() {
 // — usado por vistas macro (Resumen General) que necesitan comparar
 // últimos 2 períodos y ver todas las AGFs.
 function activeFiles(ignoreFilters = false) {
-  if (ignoreFilters || !STATE.selectedPeriod) return STATE.files;
+  if (ignoreFilters) return STATE.files;
+  // Multi-select tiene prioridad sobre el legacy single-select
+  if (STATE.selectedPeriodsSet && STATE.selectedPeriodsSet.size > 0) {
+    return STATE.files.filter(f => STATE.selectedPeriodsSet.has(f.periodo));
+  }
+  if (!STATE.selectedPeriod) return STATE.files;
   return STATE.files.filter(f => f.periodo === STATE.selectedPeriod);
 }
 
@@ -3546,12 +3649,31 @@ function renderHeaderStats() {
 }
 
 function renderPeriodSelect() {
-  const sel = document.getElementById('period-select');
   const periods = allPeriods();
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">Todos los períodos</option>' +
-    periods.map(p => `<option value="${p}">${fmtPeriod(p)}</option>`).join('');
-  if (periods.includes(cur)) sel.value = cur;
+  const trigger = document.getElementById('period-multi-btn');
+  const list = document.getElementById('period-multi-list');
+  if (!trigger || !list) return;
+  // Texto del trigger (resumen del filtro actual)
+  const selected = STATE.selectedPeriodsSet;
+  const isAll = !selected || selected.size === 0;
+  if (periods.length === 0) {
+    trigger.textContent = 'Sin períodos cargados';
+    trigger.classList.remove('has-filter');
+  } else if (isAll) {
+    trigger.textContent = `Todos · ${periods.length} períodos`;
+    trigger.classList.remove('has-filter');
+  } else {
+    trigger.textContent = `${selected.size} de ${periods.length} períodos`;
+    trigger.classList.add('has-filter');
+  }
+  // Lista de checkboxes (orden descendente: más reciente arriba)
+  list.innerHTML = periods.slice().reverse().map(p => {
+    const checked = isAll || selected.has(p);
+    return `<label class="pm-row">
+      <input type="checkbox" value="${p}" ${checked ? 'checked' : ''}>
+      <span>${fmtPeriod(p)}</span>
+    </label>`;
+  }).join('') || '<div style="padding:10px;text-align:center;color:var(--c-muted);font-size:11px">Cargá archivos para ver los períodos disponibles.</div>';
 }
 
 function renderAgfFilter() {
@@ -7241,10 +7363,69 @@ function decorateScrollContainers() {
 }
 
 function setupControls() {
-  document.getElementById('period-select').addEventListener('change', (e) => {
-    STATE.selectedPeriod = e.target.value;
-    renderAll();
-  });
+  // === Selector múltiple de períodos ===
+  const trigger = document.getElementById('period-multi-btn');
+  const panel = document.getElementById('period-multi-panel');
+  if (trigger && panel) {
+    // Abrir / cerrar panel
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = panel.style.display !== 'none';
+      panel.style.display = open ? 'none' : 'block';
+      if (!open) renderPeriodSelect();  // refrescar checkboxes
+    });
+    // Click afuera del panel → cerrar
+    document.addEventListener('click', (e) => {
+      if (panel.style.display !== 'none' && !panel.contains(e.target) && e.target !== trigger) {
+        panel.style.display = 'none';
+      }
+    });
+    // Botones rápidos
+    panel.querySelectorAll('.pm-quick').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const periods = allPeriods();
+        const checkboxes = panel.querySelectorAll('#period-multi-list input[type="checkbox"]');
+        if (action === 'all') {
+          checkboxes.forEach(cb => cb.checked = true);
+        } else if (action === 'clear') {
+          checkboxes.forEach(cb => cb.checked = false);
+        } else if (action === 'last12') {
+          // Últimos 12 períodos (independiente de fecha calendario)
+          const last12 = new Set(periods.slice(-12));
+          checkboxes.forEach(cb => cb.checked = last12.has(cb.value));
+        } else if (action === 'lastYear') {
+          // Año del último período cargado
+          const lastP = periods[periods.length - 1];
+          if (lastP) {
+            const yr = lastP.slice(0, 4);
+            checkboxes.forEach(cb => cb.checked = cb.value.startsWith(yr));
+          }
+        }
+      });
+    });
+    // Aplicar selección
+    document.getElementById('period-multi-apply').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const periods = allPeriods();
+      const checkboxes = panel.querySelectorAll('#period-multi-list input[type="checkbox"]:checked');
+      const selectedSet = new Set(Array.from(checkboxes).map(cb => cb.value));
+      // Si seleccionó TODOS → tratar como filtro vacío (== sin filtro)
+      if (selectedSet.size === 0 || selectedSet.size === periods.length) {
+        STATE.selectedPeriodsSet = new Set();
+      } else {
+        STATE.selectedPeriodsSet = selectedSet;
+      }
+      STATE.selectedPeriod = '';  // limpiar legacy
+      panel.style.display = 'none';
+      renderAll();
+    });
+    document.getElementById('period-multi-close').addEventListener('click', (e) => {
+      e.stopPropagation();
+      panel.style.display = 'none';
+    });
+  }
   document.getElementById('agf-filter').addEventListener('change', (e) => {
     STATE.agfFilter = e.target.value;
     renderAll();
@@ -7361,30 +7542,9 @@ function setupControls() {
       window.location.replace(url.toString());
     });
   }
-  document.getElementById('btn-export-csv').addEventListener('click', () => {
-    exportCSV();
-    showSuccessToast('CSV descargado');
-  });
-  // Exportar PDF del Resumen General · jsPDF nativo (texto seleccionable real).
-  document.getElementById('btn-export-pdf').addEventListener('click', () => {
-    if (STATE.files.length === 0) {
-      alert('Carga archivos primero para poder generar el PDF.');
-      return;
-    }
-    // jsPDF se expone como window.jspdf.jsPDF en la build UMD.
-    if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
-      alert('La librería de PDF aún no terminó de cargar. Esperá un par de segundos y reintenta.');
-      return;
-    }
-    showSuccessToast('Generando PDF...');
-    try {
-      _generatePdfReport();
-      showSuccessToast('PDF descargado');
-    } catch (err) {
-      console.error(err);
-      alert('Error al generar PDF: ' + err.message);
-    }
-  });
+  // Botones de export PDF/CSV fueron removidos de la action-bar (no
+  // aportaban valor). El código de _generatePdfReport y exportCSV queda
+  // disponible internamente por si más adelante se reactivan.
 
 // Genera el PDF del Resumen General usando jsPDF + autoTable.
 // Layout de informe profesional: header, KPIs en grid, conclusiones,
