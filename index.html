@@ -5878,10 +5878,17 @@ function renderEvolucion() {
   const list = Array.from(byEntity.values());
 
   // Compute first/last period totals + variation
+  // Si una entidad no tenía datos en el primer período global (ej. arrancó después),
+  // usamos su primer período con datos > 0 como base. Esto evita que los AGFs
+  // queden excluidos del Top 5 cuando el período inicial global está vacío
+  // (típico cuando se carga un B.2 muy temprano sin contraparte real).
   const firstP = periods[0];
   const lastP = periods[periods.length - 1];
   for (const e of list) {
-    e.first = e.perPeriod[firstP] || 0;
+    const firstNonZeroP = periods.find(p => (e.perPeriod[p] || 0) > 0);
+    const effectiveFirstP = firstNonZeroP || firstP;
+    e.first = e.perPeriod[effectiveFirstP] || 0;
+    e.firstPeriod = effectiveFirstP;
     e.last = e.perPeriod[lastP] || 0;
     e.delta = e.last - e.first;
     e.deltaPct = e.first > 0 ? (e.delta / e.first) * 100 : (e.last > 0 ? Infinity : 0);
@@ -5901,8 +5908,11 @@ function renderEvolucion() {
   const sysLast = sysTotals[sysTotals.length - 1];
   const sysMax = Math.max(...sysTotals);
 
-  // Top movers (only entities with valid first-period base for % comparison)
-  const moversPool = list.filter(e => e.first > 0 && Math.abs(e.delta) > 0);
+  // Top movers: cualquier entidad con delta no nulo. Las entidades que aparecieron
+  // después del primer período global ya tienen como base su primer período real
+  // (ver `effectiveFirstP` arriba), por lo que su delta refleja crecimiento real
+  // y no la magnitud completa de su primera aparición.
+  const moversPool = list.filter(e => Math.abs(e.delta) > 0);
   const topGains = moversPool.slice().sort((a, b) => b.delta - a.delta).slice(0, 5);
   const topLosses = moversPool.slice().sort((a, b) => a.delta - b.delta).slice(0, 5);
 
