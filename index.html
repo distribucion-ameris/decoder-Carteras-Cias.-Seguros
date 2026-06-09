@@ -7236,31 +7236,17 @@ function renderPulsoAmeris() {
   // creciendo o cayendo en las carteras de las aseguradoras.
   // Útil para entender competencia: en qué AGFs las cías. están confiando más.
   //
-  // Comparamos para cada cía. su ÚLTIMA foto vs su PENÚLTIMA foto (dentro del
-  // set activo). Esto da una comparación coherente por cía. sin exigir que
-  // todas hayan presentado los mismos meses exactos — las cías. CMF presentan
-  // con desfases distintos, y exigir un par común estricto excluye casi todo.
+  // Comparación: lastP vs prevP estrictos (los 2 últimos períodos del filtro
+  // activo). NO usamos el `lastCFI` consolidado porque ese mezcla períodos
+  // distintos por cía. y sesga la comparación MoM hacia "todo crece".
   let agfMovers = null;
   if (allP.length >= 2 && prevP) {
-    // Para cada cía., colecto el set de períodos en los que tiene datos
-    const periodsByIns = new Map();
-    for (const h of allCFI) {
-      let s = periodsByIns.get(h._insurerRut);
-      if (!s) { s = new Set(); periodsByIns.set(h._insurerRut, s); }
-      s.add(h._periodo);
-    }
-    // Para cada cía., su último y penúltimo período
-    const lastPerIns = new Map();
-    const prevPerIns = new Map();
-    for (const [ins, set] of periodsByIns.entries()) {
-      const sorted = Array.from(set).sort();
-      if (sorted.length >= 1) lastPerIns.set(ins, sorted[sorted.length - 1]);
-      if (sorted.length >= 2) prevPerIns.set(ins, sorted[sorted.length - 2]);
-    }
-    // Solo cías con ≥2 períodos aportan al cálculo
-    const nInsComparables = prevPerIns.size;
-    const lastCFI_mom = allCFI.filter(h => prevPerIns.has(h._insurerRut) && lastPerIns.get(h._insurerRut) === h._periodo);
-    const prevCFI = allCFI.filter(h => prevPerIns.has(h._insurerRut) && prevPerIns.get(h._insurerRut) === h._periodo);
+    const lastCFI_mom = allCFI.filter(h => h._periodo === lastP);
+    const prevCFI = allCFI.filter(h => h._periodo === prevP);
+    // Solo cías. que presentaron ambos períodos cuentan en el sublabel
+    const insurersInLast = new Set(lastCFI_mom.map(h => h._insurerRut));
+    const insurersInPrev = new Set(prevCFI.map(h => h._insurerRut));
+    const nInsComparables = [...insurersInLast].filter(i => insurersInPrev.has(i)).length;
     const aggrByAgf = (recs) => {
       const m = new Map();
       for (const h of recs) {
@@ -7624,10 +7610,10 @@ function renderPulsoAmeris() {
         </tr>`;
       };
       const insight = agfMovers.netFlow > 0
-        ? `<strong style="color:#047857">Flujo neto positivo</strong> de <strong>${fmtMoney(agfMovers.netFlow)}</strong> comparando la última foto B.2 de cada aseguradora con su foto previa. Las compañías de seguros están <strong>aumentando</strong> su inversión total en fondos.`
+        ? `<strong style="color:#047857">Flujo neto positivo</strong> de <strong>${fmtMoney(agfMovers.netFlow)}</strong> entre ${fmtPeriod(agfMovers.prevP)} y ${fmtPeriod(agfMovers.lastP)}. Las compañías de seguros están <strong>aumentando</strong> su inversión total en fondos.`
         : agfMovers.netFlow < 0
-        ? `<strong style="color:#b91c1c">Flujo neto negativo</strong> de <strong>${fmtMoney(Math.abs(agfMovers.netFlow))}</strong> comparando la última foto B.2 de cada aseguradora con su foto previa. Las compañías de seguros están <strong>reduciendo</strong> exposición a fondos.`
-        : `Flujo neto cercano a cero comparando la última foto B.2 de cada aseguradora con su foto previa.`;
+        ? `<strong style="color:#b91c1c">Flujo neto negativo</strong> de <strong>${fmtMoney(Math.abs(agfMovers.netFlow))}</strong> entre ${fmtPeriod(agfMovers.prevP)} y ${fmtPeriod(agfMovers.lastP)}. Las compañías de seguros están <strong>reduciendo</strong> exposición a fondos.`
+        : `Flujo neto cercano a cero entre ${fmtPeriod(agfMovers.prevP)} y ${fmtPeriod(agfMovers.lastP)}.`;
       return `
         <div class="card" style="border-left:4px solid var(--c-ameris-blue)">
           <div class="card-header" style="background:linear-gradient(135deg,var(--c-ameris-blue) 0%,var(--c-ameris-navy) 100%)">
@@ -7638,7 +7624,7 @@ function renderPulsoAmeris() {
             <div style="margin-top:6px;font-size:12px;color:var(--c-muted)">
               Total entrante (AGFs que ganaron exposición): <strong style="color:#047857">+${fmtMoney(agfMovers.totalIn)}</strong> ·
               Total saliente (AGFs que perdieron): <strong style="color:#b91c1c">${fmtMoney(agfMovers.totalOut)}</strong>
-              <br>Comparación basada en <strong>${agfMovers.nInsurersInBoth}</strong> aseguradoras con al menos 2 períodos cargados (cada cía. compara su última vs su penúltima foto).
+              <br>${agfMovers.nInsurersInBoth} aseguradoras presentaron ambos períodos (${fmtPeriod(agfMovers.prevP)} y ${fmtPeriod(agfMovers.lastP)}). Las que solo presentaron uno aportan al delta como "nuevas" o "perdidas".
             </div>
           </div>
           <div class="grid-2" style="align-items:start;padding:0 12px 12px">
@@ -7646,7 +7632,7 @@ function renderPulsoAmeris() {
               <div style="padding:6px 4px 8px;font-size:12px;color:#047857;font-weight:700">⬆ AGFs en las que más están invirtiendo</div>
               <div style="max-height:420px;overflow-y:auto;border-top:1px solid var(--c-border)">
                 <table style="width:100%">
-                  <thead style="position:sticky;top:0;background:#f8fafc;z-index:1"><tr><th>AGF</th><th class="num" title="Suma de penúltimas fotos">Foto previa</th><th class="num" title="Suma de últimas fotos">Foto actual</th><th class="num">Δ abs.</th><th class="num">Δ %</th><th></th></tr></thead>
+                  <thead style="position:sticky;top:0;background:#f8fafc;z-index:1"><tr><th>AGF</th><th class="num">${fmtPeriod(agfMovers.prevP)}</th><th class="num">${fmtPeriod(agfMovers.lastP)}</th><th class="num">Δ abs.</th><th class="num">Δ %</th><th></th></tr></thead>
                   <tbody>${agfMovers.topGrowers.map(moverRow).join('') || '<tr><td colspan="6" class="empty-state">Ninguna AGF ganó exposición</td></tr>'}</tbody>
                 </table>
               </div>
@@ -7655,7 +7641,7 @@ function renderPulsoAmeris() {
               <div style="padding:6px 4px 8px;font-size:12px;color:#b91c1c;font-weight:700">⬇ AGFs en las que están reduciendo</div>
               <div style="max-height:420px;overflow-y:auto;border-top:1px solid var(--c-border)">
                 <table style="width:100%">
-                  <thead style="position:sticky;top:0;background:#f8fafc;z-index:1"><tr><th>AGF</th><th class="num" title="Suma de penúltimas fotos">Foto previa</th><th class="num" title="Suma de últimas fotos">Foto actual</th><th class="num">Δ abs.</th><th class="num">Δ %</th><th></th></tr></thead>
+                  <thead style="position:sticky;top:0;background:#f8fafc;z-index:1"><tr><th>AGF</th><th class="num">${fmtPeriod(agfMovers.prevP)}</th><th class="num">${fmtPeriod(agfMovers.lastP)}</th><th class="num">Δ abs.</th><th class="num">Δ %</th><th></th></tr></thead>
                   <tbody>${agfMovers.topReducers.map(moverRow).join('') || '<tr><td colspan="6" class="empty-state">Ninguna AGF perdió exposición</td></tr>'}</tbody>
                 </table>
               </div>
