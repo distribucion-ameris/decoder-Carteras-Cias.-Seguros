@@ -3179,6 +3179,19 @@ function activeFilesB5(ignoreFilters = false) { return activeFiles(ignoreFilters
 // (B.5 deuda) se excluyen porque el dashboard se enfoca en el negocio AGF
 // (cuotas) — Ameris no necesita ver acciones individuales y los bonos
 // extranjeros son del libro de la aseguradora, no de una AGF.
+// Filtra `holdings` para quedarse SOLO con la última foto disponible de cada
+// aseguradora. Evita el doble conteo cuando hay múltiples períodos cargados:
+// sin esto, el AUM de una AGF se multiplica por la cantidad de meses cargados.
+// Es la base correcta para vistas tipo "foto al cierre" (Por AGF, Por Cía.).
+function latestSnapshotByInsurer(holdings) {
+  const lastP = new Map();
+  for (const h of holdings) {
+    const cur = lastP.get(h._insurerRut);
+    if (!cur || h._periodo > cur) lastP.set(h._insurerRut, h._periodo);
+  }
+  return holdings.filter(h => lastP.get(h._insurerRut) === h._periodo);
+}
+
 function activeHoldings(ignoreFilters = false) {
   const agfF = ignoreFilters ? '' : STATE.agfFilter;
   const onlyRut = agfF.startsWith('rut:') ? agfF.slice(4) : null;
@@ -4774,7 +4787,8 @@ let AGF_OPEN_RUT = '';
 let AGF_SEARCH = '';
 
 function renderAGF() {
-  const hs = activeHoldings();
+  const hsAll = activeHoldings();
+  const hs = latestSnapshotByInsurer(hsAll);
   const container = document.getElementById('agf-content');
   if (STATE.files.length === 0) {
     container.innerHTML = emptyStateB2Only('el análisis por AGF');
@@ -4867,14 +4881,17 @@ function renderAGF() {
 // Nivel 1: resumen ejecutivo (KPIs + Top categorías + Top 5 cías clientes).
 // Nivel 2: tablas detalladas de fondos (colapsado por defecto, on-demand).
 function renderAGFCardBody(rut, hs) {
-  // Solo las posiciones de esta AGF (canonicalizadas)
+  // `hs` ya viene consolidado por cía. (última foto disponible de cada una).
+  // Solo las posiciones de esta AGF (canonicalizadas).
   const recsAll = hs.filter(h => canonicalAgfRut(h.rutEmisor) === canonicalAgfRut(rut));
   if (recsAll.length === 0) {
     return `<div class="empty-state" style="padding:20px">Sin posiciones para esta AGF en el período seleccionado.</div>`;
   }
   const periodsHere = Array.from(new Set(recsAll.map(r => r._periodo))).sort();
   const lastP = periodsHere[periodsHere.length - 1];
-  const lastRecs = recsAll.filter(r => r._periodo === lastP);
+  // Ojo: NO refiltramos por lastP — hs ya es el mosaico consolidado, así que
+  // re-filtrar excluiría cías. cuya última foto sea anterior a lastP global.
+  const lastRecs = recsAll;
   const totLibro = lastRecs.reduce((s, h) => s + h.valLibro, 0);
   const fundsCount = new Set(lastRecs.map(h => h.nemo + '||' + (h.serie || ''))).size;
   const positionsCount = lastRecs.length;
@@ -5143,7 +5160,8 @@ let INSURER_DETAIL_OPEN = false;
 let INSURER_SEARCH = '';
 
 function renderInsurer() {
-  const hs = activeHoldings();
+  const hsAll = activeHoldings();
+  const hs = latestSnapshotByInsurer(hsAll);
   const container = document.getElementById('insurer-content');
   if (STATE.files.length === 0) {
     container.innerHTML = emptyStateB2Only('el análisis por compañía de seguros');
