@@ -77,6 +77,7 @@ window.RUT_AGF_MAP = {
   "076551925-K": "Altis AGF",
   "076930595-5": "VanTrust Capital AGF",
   "077060806-6": "Aspen Capital AGF",
+  "077201978-5": "LarraínVial AGF",
   "077157847-0": "Doctor Sierra S.A.",
   "094046000-K": "Egeco S.A.",
   "076536353-5": "Enel Chile S.A.",
