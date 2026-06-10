@@ -2827,6 +2827,34 @@ const AGF_MERGE_MAP = {
   // pero operativamente es parte de LarraínVial AGF (no entidad independiente).
   '077201978-5': '096955500-K',
 };
+
+// AGFs cuyo portafolio mezcla fondos administrados directamente y fondos que
+// son feeders a managers internacionales (PE/PE secundarios/global, etc.).
+// Para cada AGF (RUT canónico) declaramos los managers externos y un regex
+// que matchea el nombre amigable del fondo (`nemoFriendly`) o el nemo crudo.
+// Los fondos que no matchean ningún manager se consideran "AGF directa".
+const AGF_INTL_MANAGERS = {
+  // Moneda AGF: feeders Carlyle (PE global/Asia) y Alpinvest (secundarios)
+  '096684990-8': {
+    'Carlyle': /carlyle/i,
+    'Alpinvest': /alpinvest/i,
+  },
+};
+
+// Clasifica una posición de fondo según el origen de su manager.
+// Retorna `null` si la AGF no tiene configuración (no aplica la métrica),
+// `'directa'` si el fondo es administrado directamente por la AGF,
+// o el nombre del manager externo (ej. 'Carlyle', 'Alpinvest').
+function classifyFundManager(rec) {
+  const agfRut = canonicalAgfRut(rec.rutEmisor);
+  const cfg = AGF_INTL_MANAGERS[agfRut];
+  if (!cfg) return null;
+  const haystack = (rec.nemoFriendly || '') + ' ' + (rec.nemo || '');
+  for (const [mgr, re] of Object.entries(cfg)) {
+    if (re.test(haystack)) return mgr;
+  }
+  return 'directa';
+}
 function canonicalAgfRut(rut) {
   return AGF_MERGE_MAP[rut] || rut;
 }
@@ -4917,6 +4945,47 @@ function renderAGFCardBody(rut, hs) {
   for (const h of lastRecs) catTotals[h.category] = (catTotals[h.category] || 0) + h.valLibro;
   const catSorted = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
 
+  // Origen del fondo (administración directa vs. feeders a managers internacionales).
+  // Solo se renderiza si la AGF tiene configuración en AGF_INTL_MANAGERS.
+  const intlConfig = AGF_INTL_MANAGERS[canonicalAgfRut(rut)];
+  let originSection = '';
+  if (intlConfig) {
+    const slots = new Map();
+    slots.set('directa', { name: `${canonicalAgfName(rut)} directa`, valor: 0, fondos: new Set(), insurers: new Set(), isDirect: true });
+    for (const mgr of Object.keys(intlConfig)) {
+      slots.set(mgr, { name: `vía ${mgr}`, valor: 0, fondos: new Set(), insurers: new Set(), isDirect: false });
+    }
+    for (const h of lastRecs) {
+      const origin = classifyFundManager(h);
+      const slot = slots.get(origin);
+      if (!slot) continue;
+      slot.valor += h.valLibro || 0;
+      slot.fondos.add(h.nemo + '||' + (h.serie || ''));
+      if (h._insurerRut) slot.insurers.add(h._insurerRut);
+    }
+    const originRows = Array.from(slots.values())
+      .filter(s => s.valor > 0 || s.fondos.size > 0)
+      .sort((a, b) => b.valor - a.valor)
+      .map(s => {
+        const pct = totLibro > 0 ? s.valor / totLibro * 100 : 0;
+        const barColor = s.isDirect ? 'var(--c-ameris-cyan)' : '#8b5cf6';
+        return `
+          <div class="ic-dist-row">
+            <span class="ic-dist-name">${escapeHtml(s.name)}</span>
+            <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${barColor}"></div></div>
+            <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+            <span class="ic-dist-val">${fmtMoney(s.valor)} · ${s.fondos.size} fondo${s.fondos.size !== 1 ? 's' : ''} · ${s.insurers.size} cía${s.insurers.size !== 1 ? 's' : ''}</span>
+          </div>
+        `;
+      }).join('');
+    originSection = `
+      <div class="ic-summary-block" style="margin-top:14px">
+        <div class="ic-summary-block-title">Origen del fondo · administración directa vs. feeders internacionales</div>
+        <div class="ic-dist-list">${originRows}</div>
+      </div>
+    `;
+  }
+
   const periodsLabel = periodsHere.length > 1
     ? `${fmtPeriod(periodsHere[0])} → ${fmtPeriod(lastP)} (${periodsHere.length} períodos)`
     : fmtPeriod(lastP);
@@ -5033,6 +5102,7 @@ function renderAGFCardBody(rut, hs) {
   return `
     <div class="ic-body-inner" onclick="event.stopPropagation()">
       ${summaryStats}
+      ${originSection}
       <div class="ic-summary-grid">
         <div class="ic-summary-block">
           <div class="ic-summary-block-title">Distribución por categoría</div>
