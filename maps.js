@@ -772,6 +772,7 @@ window.NEMO_NAME_MAP = {
   "CFIAMLGT-E":    "Ameris LGT Secondaries IV",
   "CFIAMG3I-E":    "Ameris NM Private Credit I",
   "CFIAG3IN-E":    "Ameris NM Private Credit IN",
+  "CFIAMG4A-E":    "Ameris NM Guardian IV",
   "CFIASXII-E":    "Ameris Dover Street XI I",
   "CFIAHV7I-E":    "Ameris Harbourvest Co-Investment VII I",
   "CFIANM7I-E":    "Ameris NM Partners VII I",

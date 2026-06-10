@@ -2865,6 +2865,13 @@ const AGF_INTL_MANAGERS = {
       regex: /\b(infraestructura|peru)\b/i },
     { label: 'Managers extranjeros', type: 'external' },
   ],
+  // Ameris Capital AGF: feeders LGT Secondaries, Nordic, Harbourvest, BIM,
+  // Dover Street, NM (Northern Mark Partners/Private Credit/Guardian), CESL.
+  '076503273-3': [
+    { label: 'Managers extranjeros', type: 'external',
+      regex: /\b(lgt|nordic|harbourvest|bim|dover\s+street|nm|cesl)\b/i },
+    { label: 'Ameris Capital AGF directa', type: 'direct' },
+  ],
 };
 
 // Clasifica una posición de fondo según el origen de su manager.
