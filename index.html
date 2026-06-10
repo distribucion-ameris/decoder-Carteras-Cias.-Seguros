@@ -2839,6 +2839,12 @@ const AGF_INTL_MANAGERS = {
     'Carlyle': /carlyle/i,
     'Alpinvest': /alpinvest/i,
   },
+  // Compass Group Chile AGF: serie de feeders a managers internacionales.
+  // Cualquier fondo cuyo nombre contenga alguno de estos siglas/términos
+  // es un acceso a un manager extranjero (Brookfield, Blackstone, etc.).
+  '096804330-7': {
+    'Managers extranjeros': /\b(bcp|private\s+equity|lcp|brep|lapco|pclo|ls\s*12|bxd|gso\s+cof)\b/i,
+  },
 };
 
 // Clasifica una posición de fondo según el origen de su manager.
