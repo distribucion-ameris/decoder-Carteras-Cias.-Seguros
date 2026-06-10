@@ -1731,6 +1731,7 @@
       <ul style="margin:6px 0 0">
         <li><strong>B.2</strong> — Acciones y cuotas de fondos de inversión <em>nacionales</em> (Circular N° 1.835). Filename: <code>aAAAAMMv.RUT</code>.</li>
         <li><strong>B.5</strong> — Inversiones en el <em>extranjero</em>: bonos soberanos/corporativos, fondos extranjeros y acciones extranjeras (Circular N° 152). Filename: <code>xAAAAMMv.RUT</code>.</li>
+        <li><strong>B.8</strong> — Composición de cartera consolidada (Circular N° 1.835). Es la tabla maestra que agrupa toda la cartera de la cía. por familia de instrumento. Filename: <code>cAAAAMMv.RUT</code>. Pestaña: Top Down · Sistema.</li>
       </ul>
       <p style="margin-top:10px"><strong>¿Qué puedes hacer aquí?</strong></p>
       <ul>
@@ -1745,7 +1746,7 @@
       <ol style="list-style:none; padding:0">
         <li style="display:flex; align-items:flex-start; margin-bottom:10px">
           <span class="step-num">1</span>
-          <span><strong>Descarga los archivos</strong> desde el sitio de la CMF (<a href="https://www.cmfchile.cl" target="_blank" style="color:var(--c-ameris-blue-2)">cmfchile.cl</a>). B.2 viene como <code>aAAAAMMv.RUT</code> y B.5 como <code>xAAAAMMv.RUT</code>, ambos sin extensión.</span>
+          <span><strong>Descarga los archivos</strong> desde el sitio de la CMF (<a href="https://www.cmfchile.cl" target="_blank" style="color:var(--c-ameris-blue-2)">cmfchile.cl</a>). B.2 viene como <code>aAAAAMMv.RUT</code>, B.5 como <code>xAAAAMMv.RUT</code> y B.8 como <code>cAAAAMMv.RUT</code>, todos sin extensión.</span>
         </li>
         <li style="display:flex; align-items:flex-start; margin-bottom:10px">
           <span class="step-num">2</span>
@@ -1972,6 +1973,7 @@
   <!-- TABS -->
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="general" role="tab" title="Vista panorámica del sistema: KPIs, distribución por categoría, top AGFs y top compañías">Resumen General</button>
+    <button class="tab" data-tab="topdown" role="tab" title="Análisis Top Down: del sistema asegurador completo (cartera consolidada B.8) hasta el detalle de cada compañía">Top Down · Sistema</button>
     <button class="tab" data-tab="agf" role="tab" title="Análisis agrupado por AGF/Emisor con drill-down al detalle por fondo y compañía cliente">Por AGF / Emisor</button>
     <button class="tab" data-tab="insurer" role="tab" title="Detalle de la cartera de cada compañía de seguros, agrupado por categoría">Por Compañía de Seguros</button>
     <button class="tab" data-tab="evolucion" role="tab" title="Evolución mes a mes con sparklines, gráfico de tendencia y top movers">Evolución</button>
@@ -2014,6 +2016,11 @@
     <!-- TAB: PULSO AMERIS — análisis para Ameris AGF -->
     <section class="tab-panel" id="tab-pulso">
       <div id="pulso-content"></div>
+    </section>
+
+    <!-- TAB: TOP DOWN · SISTEMA — análisis de cartera consolidada (B.8) -->
+    <section class="tab-panel" id="tab-topdown">
+      <div id="topdown-content"></div>
     </section>
 
   </div>
@@ -2252,7 +2259,7 @@ function categorize(rec) {
 // Filename pattern: aYYYYMMv.RUT_DIGITS  (B.2 acciones/cuotas)
 //                   xYYYYMMv.RUT_DIGITS  (B.5 inversiones extranjero)
 function inferFromFilename(filename) {
-  const m = filename.match(/^[ax](\d{6})v\.([0-9Kk]+)/i);
+  const m = filename.match(/^[axc](\d{6})v\.([0-9Kk]+)/i);
   if (!m) return null;
   const periodo = m[1];
   const rutDigits = m[2];
@@ -2263,22 +2270,27 @@ function inferFromFilename(filename) {
   return { rut, nombre, periodo };
 }
 
-// Detect file type from filename (a* = B.2, x* = B.5). Falls back to line length
-// (572 chars = B.2, 611 chars = B.5) when filename is ambiguous.
+// Detect file type from filename (a* = B.2, x* = B.5, c* = B.8). Fallback a
+// largo de línea: B.2 ≈ 215+, B.5 ≈ 611, B.8 ≈ 138.
 function detectFileType(filename, sampleLine) {
   if (/^a\d{6}v\.[0-9Kk]+/i.test(filename)) return 'b2';
   if (/^x\d{6}v\.[0-9Kk]+/i.test(filename)) return 'b5';
+  if (/^c\d{6}v\.[0-9Kk]+/i.test(filename)) return 'b8';
   if (sampleLine && sampleLine.length >= 600) return 'b5';
+  if (sampleLine && sampleLine.length >= 138 && sampleLine.length < 200) return 'b8';
   return 'b2';
 }
 
-// Parse a full file's text content. Dispatches to B.2 or B.5 parser based on
-// the filename pattern (or, as fallback, the record line length).
+// Parse a full file's text content. Dispatches to B.2 / B.5 / B.8 parser.
 function parseFile(text, filename) {
-  const lines = text.split(/\r?\n/).filter(l => l.length >= 100);
+  // B.8 tiene líneas más cortas (138 chars), no filtramos tan agresivo.
+  const ft = detectFileType(filename, text.split(/\r?\n/)[0] || '');
+  const minLen = ft === 'b8' ? 50 : 100;
+  const lines = text.split(/\r?\n/).filter(l => l.length >= minLen);
   if (lines.length === 0) return null;
-  const ft = detectFileType(filename, lines[0]);
-  return ft === 'b5' ? parseB5File(lines, filename) : parseB2File(lines, filename);
+  if (ft === 'b5') return parseB5File(lines, filename);
+  if (ft === 'b8') return parseB8File(lines, filename);
+  return parseB2File(lines, filename);
 }
 
 // Existing B.2 parser (acciones / cuotas FFII nacionales).
@@ -2580,6 +2592,171 @@ function parseB5File(lines, filename) {
       skipped: skippedLines,
       utf8Shifted: utf8ShiftedLines,
     },
+  };
+}
+
+/* =======================================================================
+   PARSER for B.8 (Composición de Cartera) fixed-width records.
+   File naming: cAAAAMMv.<RUT_CIA>  (e.g., c202603v.96812960)
+   Es la "tabla maestra" del top-down: una línea por tipo de instrumento
+   (A00, B10, ...) con el VALOR_FINAL agregado y desgloses por método IFRS
+   (CA/VR/EE/CUI) + filiales/coligadas + representativas/no representativas.
+   ======================================================================= */
+
+// Mapeo de tipos de instrumento CMF a familias top-down.
+// Copiado del decoder oficial (actualizar_carteras.py). Las familias son
+// las que aparecen en el Nivel 1 (foto sistema).
+const B8_FAMILIAS = {
+  A00:'Renta fija',     B10:'Liquidez',           B20:'Renta fija',
+  C00:'Renta fija',     D10:'Renta fija',          D20:'Renta fija',
+  E10:'Renta fija',     E20:'Renta fija extran.',  F11:'CFI nacional',
+  F31:'Fondos mutuos',  G10:'Renta variable',      H10:'Renta fija extran.',
+  H30:'Renta fija extran.', H40:'Renta fija extran.', H61:'Fondos extran.',
+  H62:'Fondos extran.', H64:'Fondos extran.',      H65:'Fondos extran.',
+  H91:'Liquidez extran.', I00:'Renta fija',        J00:'Otros',
+  J10:'Otros',          L00:'Otros',                M10:'Derivados',
+  M20:'Derivados',      N10:'Otros',                N20:'Otros',
+  X10:'Bienes raíces',  X20:'Bienes raíces',        X41:'Filiales/Coligadas',
+  X42:'Filiales/Coligadas', Z10:'Liquidez',         Z20:'Renta variable',
+  Z30:'Liquidez',       Z50:'Otros',                Z60:'Otros',
+  Z70:'Bienes raíces',  Z81:'Otros',                Z82:'Otros',
+};
+
+// Orden visual de las familias (top-down)
+const B8_FAMILIA_ORDER = [
+  'Renta fija', 'Renta fija extran.', 'CFI nacional', 'Fondos mutuos',
+  'Fondos extran.', 'Renta variable', 'Liquidez', 'Liquidez extran.',
+  'Bienes raíces', 'Filiales/Coligadas', 'Derivados', 'Otros',
+];
+
+// Colores por familia (paleta consistente con el decoder oficial)
+const B8_FAMILIA_COLORS = {
+  'Renta fija':           '#1F4E79',
+  'Renta fija extran.':   '#2E75B6',
+  'CFI nacional':         '#375623',
+  'Fondos mutuos':        '#70AD47',
+  'Fondos extran.':       '#A9D18E',
+  'Renta variable':       '#833C00',
+  'Liquidez':             '#156082',
+  'Liquidez extran.':     '#5BC0DE',
+  'Bienes raíces':        '#BA7517',
+  'Filiales/Coligadas':   '#7030A0',
+  'Derivados':            '#C00000',
+  'Otros':                '#7F7F7F',
+};
+
+// Descripción de cada tipo (tooltip / drill-down futuro)
+const B8_TIPOS_INFO = {
+  A00: 'Bonos Estado / BC Chile',          B10: 'Depósitos bancarios',
+  B20: 'Bonos bancarios',                  C00: 'Letras de crédito hipotecario',
+  D10: 'Mutuos hipotecarios — bancos',     D20: 'Mutuos hipotecarios — agentes',
+  E10: 'Bonos / pagarés empresas Chile',   E20: 'Bonos emp. Chile en el exterior',
+  F11: 'Fondos de inversión nacionales',   F31: 'Fondos mutuos nacionales',
+  G10: 'Acciones S.A. abiertas',           H10: 'Bonos estados extranjeros',
+  H30: 'Deuda inst. financieras extran.',  H40: 'Bonos empresas extranjeras',
+  H61: 'Fondos inversión extranjeros',     H62: 'Fondos inv. activos extran.',
+  H64: 'Fondos mutuos activos extran.',    H65: 'ETF extranjeros',
+  H91: 'Cuentas cte. extranjeras',         I00: 'Créditos sindicados',
+  J00: 'Siniestros por cobrar',            J10: 'Siniestros coaseguro',
+  L00: 'Crédito DL 3.500',                  M10: 'Derivados financieros',
+  M20: 'Pactos (repos)',                    N10: 'Préstamos personas/empresas',
+  N20: 'Préstamos pensionados',            X10: 'Bienes raíces inversión',
+  X20: 'Bienes raíces uso propio',         X41: 'Participación filiales',
+  X42: 'Participación coligadas',          Z10: 'Saldos cta cte',
+  Z20: 'Acciones S.A. cerradas',           Z30: 'Caja',
+  Z50: 'Inversiones mobiliarias',          Z60: 'Otras inv. financieras',
+  Z70: 'Bienes raíces leasing',            Z81: 'Inv. extranjeras NCG 152',
+  Z82: 'Inv. nacionales NCG 152',
+};
+
+// Parsea una línea de detalle (tipo 2) del archivo B.8.
+// Formato fijo: 1 + 3 (tipo) + 12 (vf) + 12+12 (rep, norep) +
+//               14×7 (ca, vr, ee, cui, otr, fil, col) = 138 chars.
+function _parseB8Signed(s) {
+  if (!s || s.length < 2) return 0;
+  const sign = s[0] === '-' ? -1 : 1;
+  const n = parseInt(s.substring(1), 10);
+  return isFinite(n) ? sign * n : 0;
+}
+function parseB8Detail(line) {
+  const tipo = line.substring(1, 4);
+  let vf;
+  // VF puede venir con signo (+/-/espacio en pos 4) o sin signo (formato antiguo).
+  if (line[4] === '+' || line[4] === '-' || line[4] === ' ') {
+    const n = parseInt(line.substring(5, 16), 10);
+    vf = isFinite(n) ? (line[4] === '-' ? -n : n) : 0;
+  } else {
+    const n = parseInt(line.substring(4, 16), 10);
+    vf = isFinite(n) ? n : 0;
+  }
+  return {
+    tipo,
+    vf,
+    rep:   _parseB8Signed(line.substring(16, 28)),
+    norep: _parseB8Signed(line.substring(28, 40)),
+    ca:    _parseB8Signed(line.substring(40, 54)),
+    vr:    _parseB8Signed(line.substring(54, 68)),
+    ee:    _parseB8Signed(line.substring(68, 82)),
+    cui:   _parseB8Signed(line.substring(82, 96)),
+    otr:   _parseB8Signed(line.substring(96, 110)),
+    fil:   _parseB8Signed(line.substring(110, 124)),
+    col:   _parseB8Signed(line.substring(124, 138)),
+    familia: B8_FAMILIAS[tipo] || 'Otros',
+    tipoDesc: B8_TIPOS_INFO[tipo] || tipo,
+  };
+}
+
+function parseB8File(lines, filename) {
+  // Header: '1' + RUT(9) + DV(1) + Nombre(60) + Periodo(6) + padding.
+  const header = lines[0];
+  let rut, nombre, periodo, detailStart;
+  if (!header || header.charAt(0) !== '1' || header.length < 77) {
+    const inferred = inferFromFilename(filename);
+    if (!inferred) return null;
+    rut = inferred.rut;
+    nombre = inferred.nombre;
+    periodo = inferred.periodo;
+    detailStart = 0;
+  } else {
+    const rutDigits = header.substring(1, 10);
+    const dv = header.substring(10, 11).toUpperCase();
+    rut = rutDigits + '-' + dv;
+    nombre = header.substring(11, 71).trim();
+    periodo = header.substring(71, 77).trim();
+    detailStart = 1;
+    // Override de nombre si está en mapa curado
+    if (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[rut]) {
+      nombre = INSURER_NAME_OVERRIDES[rut];
+    } else if (FILENAME_RUT_TO_INSURER) {
+      const stripped = rutDigits.replace(/^0+/, '');
+      if (FILENAME_RUT_TO_INSURER[stripped]) nombre = FILENAME_RUT_TO_INSURER[stripped];
+    }
+  }
+
+  const cartera = [];
+  let totalDetailLines = 0;
+  let skippedLines = 0;
+  for (let i = detailStart; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.charAt(0) !== '2') continue;
+    totalDetailLines++;
+    if (line.length < 138) { skippedLines++; continue; }
+    try {
+      cartera.push(parseB8Detail(line));
+    } catch (e) {
+      console.warn('Parse error B.8:', filename, 'line', i, e);
+      skippedLines++;
+    }
+  }
+
+  return {
+    fileType: 'b8',
+    fileName: filename,
+    insurerRut: rut,
+    insurerName: nombre,
+    periodo: periodo,
+    cartera: cartera,           // [{tipo, vf, rep, ...}, ...]
+    parseStats: { totalDetailLines, parsed: cartera.length, skipped: skippedLines },
   };
 }
 
@@ -3233,6 +3410,7 @@ function activeFiles(ignoreFilters = false) {
 
 function activeFilesB2(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => (f.fileType || 'b2') === 'b2'); }
 function activeFilesB5(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b5'); }
+function activeFilesB8(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b8'); }
 
 // Vista unificada del dashboard: cuotas de fondos de inversión (CFI), tanto
 // nacionales (B.2) como administradas por AGFs chilenas con activos en el
@@ -7213,6 +7391,142 @@ function _openCorrectionPrompt(kind, key, current) {
 
 
 /* =======================================================================
+   RENDER — TOP DOWN · SISTEMA ASEGURADOR
+   Análisis de la cartera consolidada de todo el sistema asegurador chileno
+   (datos B.8). Nivel 1: foto agregada con composición por familia. Niveles
+   siguientes (cía. → clase → instrumento) se agregan en bloques sucesivos.
+   ======================================================================= */
+
+function renderTopDown() {
+  const container = document.getElementById('topdown-content');
+  if (STATE.files.length === 0) {
+    container.innerHTML = emptyState(
+      'Carga archivos B.8 (formato <code>cAAAAMMv.RUT</code>) desde la CMF para ver la cartera consolidada del sistema asegurador.'
+    );
+    return;
+  }
+  const b8Files = activeFilesB8();
+  if (b8Files.length === 0) {
+    container.innerHTML = emptyState(
+      'No hay archivos B.8 cargados en el período seleccionado. Los B.8 son los archivos de composición de cartera (filename <code>cAAAAMMv.RUT</code>) que cada compañía sube a la CMF mensualmente.'
+    );
+    return;
+  }
+
+  // Foto consolidada: una entrada por (cía, tipo) usando la última presentación
+  // disponible de cada cía. dentro del filtro multi-período activo.
+  const lastPerIns = new Map();
+  for (const f of b8Files) {
+    const cur = lastPerIns.get(f.insurerRut);
+    if (!cur || f.periodo > cur) lastPerIns.set(f.insurerRut, f.periodo);
+  }
+  const snapshotFiles = b8Files.filter(f => lastPerIns.get(f.insurerRut) === f.periodo);
+
+  // Agregar por familia (sistema completo)
+  const familyMap = new Map();
+  for (const fam of B8_FAMILIA_ORDER) {
+    familyMap.set(fam, { familia: fam, total: 0, insurers: new Set(), tipos: new Set() });
+  }
+  let sysTotal = 0;
+  for (const f of snapshotFiles) {
+    for (const e of f.cartera) {
+      const fam = e.familia || 'Otros';
+      let slot = familyMap.get(fam);
+      if (!slot) {
+        slot = { familia: fam, total: 0, insurers: new Set(), tipos: new Set() };
+        familyMap.set(fam, slot);
+      }
+      slot.total += e.vf || 0;
+      slot.tipos.add(e.tipo);
+      if (f.insurerRut) slot.insurers.add(f.insurerRut);
+      sysTotal += e.vf || 0;
+    }
+  }
+  const families = Array.from(familyMap.values())
+    .filter(f => f.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  // Ranking de aseguradoras (Top 10 por AUM B.8)
+  const insurerMap = new Map();
+  for (const f of snapshotFiles) {
+    const t = f.cartera.reduce((s, e) => s + (e.vf || 0), 0);
+    insurerMap.set(f.insurerRut, { rut: f.insurerRut, name: f.insurerName, total: t, periodo: f.periodo });
+  }
+  const insurerRanking = Array.from(insurerMap.values())
+    .filter(c => c.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  // Período más reciente representado
+  const periodsHere = Array.from(new Set(snapshotFiles.map(f => f.periodo))).sort();
+  const lastP = periodsHere[periodsHere.length - 1] || '—';
+
+  // Render
+  const famRows = families.map(fam => {
+    const pct = sysTotal > 0 ? (fam.total / sysTotal * 100) : 0;
+    const color = B8_FAMILIA_COLORS[fam.familia] || '#7F7F7F';
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:200px 1fr 56px 140px">
+        <span class="ic-dist-name" style="color:${color}">${escapeHtml(fam.familia)}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(fam.total)}</span>
+      </div>
+    `;
+  }).join('');
+
+  const top10Rows = insurerRanking.slice(0, 10).map((c, i) => {
+    const pct = sysTotal > 0 ? (c.total / sysTotal * 100) : 0;
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td><strong>${escapeHtml(c.name)}</strong>
+          <div style="color:var(--c-muted);font-size:11px">RUT ${fmtRut(c.rut)} · ${fmtPeriod(c.periodo)}</div></td>
+        <td class="num">${fmtMoney(c.total)}</td>
+        <td class="num">${pct.toFixed(2)}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
+      <strong style="color:var(--c-ameris-navy)">Top Down · Sistema asegurador chileno</strong> ·
+      Última foto disponible por aseguradora (más reciente: <strong>${fmtPeriod(lastP)}</strong>) ·
+      <strong>${insurerRanking.length}</strong> compañías con B.8 cargado ·
+      AUM consolidado: <strong style="color:var(--c-ameris-blue)">${fmtMoney(sysTotal)}</strong>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">Nivel 1 · Composición por clase de activo</div></div>
+      <div style="padding:16px 22px">
+        <div style="font-size:12.5px;color:var(--c-muted);margin-bottom:12px">
+          Suma de <code>VALOR_FINAL</code> de los archivos B.8 de cada aseguradora, agrupado en las 12 familias
+          regulatorias CMF. Cada barra muestra el peso de esa clase de activo en la cartera total del sistema.
+        </div>
+        <div class="ic-dist-list">${famRows}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 10 compañías por AUM (cartera total)</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Compañía</th><th class="num">AUM total</th><th class="num">% sistema</th></tr></thead>
+          <tbody>${top10Rows}</tbody>
+        </table>
+      </div>
+      ${insurerRanking.length > 10 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 10 de ${insurerRanking.length} compañías. Click en una para ver su composición (Nivel 2 · próximamente).</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:14px;background:#fff7ed;border-left:4px solid #f59e0b">
+      <div style="padding:14px 18px;font-size:13px">
+        <strong>🚧 Niveles 2, 3 y 4 en construcción.</strong> Esta primera versión muestra el agregado del sistema (Nivel 1).
+        Los siguientes bloques agregan: drill-down por compañía, drill-down por clase de activo (renta fija con B.1, bienes raíces con B.4, etc.) y detalle por instrumento.
+      </div>
+    </div>
+  `;
+}
+
+/* =======================================================================
    RENDER — PULSO AMERIS
    Vista 360° de la posición de Ameris AGF en el sistema de seguros chileno.
    KPIs: AUM total · ranking · market share · concentración de clientes.
@@ -8317,6 +8631,7 @@ function renderActiveTab() {
     case 'extranjero':  renderExtranjero(); break;
     case 'quality':     renderQuality(); break;
     case 'pulso':       renderPulsoAmeris(); break;
+    case 'topdown':     renderTopDown(); break;
   }
 }
 
