@@ -2845,6 +2845,15 @@ const AGF_INTL_MANAGERS = {
   '096804330-7': {
     'Managers extranjeros': /\b(bcp|private\s+equity|lcp|brep|lapco|pclo|ls\s*12|bxd|gso\s+cof)\b/i,
   },
+  // LarraínVial AGF y Larraín Vial Activos AGF: ambas entidades operan
+  // feeders a managers internacionales (PE, secundarios, infra, etc.).
+  // Apollo, Altamar, Harbourvest, Baring Asia, Landmark, etc.
+  '096955500-K': {
+    'Managers extranjeros': /\b(acp|pai|landmark|baring\s+asia|apollo|altamar|court\s+square|global\s+infraestruct|galdana|adv|drake|marathon|dover\s+street|olive\s+tree|medtop\s+telepath|fen|harbourvest)\b/i,
+  },
+  '076081215-3': {
+    'Managers extranjeros': /\b(acp|pai|landmark|baring\s+asia|apollo|altamar|court\s+square|global\s+infraestruct|galdana|adv|drake|marathon|dover\s+street|olive\s+tree|medtop\s+telepath|fen|harbourvest)\b/i,
+  },
 };
 
 // Clasifica una posición de fondo según el origen de su manager.
