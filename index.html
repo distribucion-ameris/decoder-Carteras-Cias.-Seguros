@@ -3940,11 +3940,15 @@ function renderGeneral() {
     return;
   }
 
-  const sumLibro = totalValLibro(hs);
-  const localLibro = hs.filter(h => h._source === 'b2').reduce((s, h) => s + h.valLibro, 0);
-  const extLibro = hs.filter(h => h._source === 'b5').reduce((s, h) => s + h.valLibro, 0);
-  const agfList = aggregateByAGF(hs);
-  const insList = aggregateByInsurer(hs);
+  // Foto consolidada: una posición por cía. al cierre de su último período.
+  // Sin esto, sumar `hs` agregaría todos los meses cargados y los AUM se
+  // inflarían ~N veces (los B.2 son fotos al cierre, NO flujos acumulativos).
+  const hsSnap = latestSnapshotByInsurer(hs);
+  const sumLibro = totalValLibro(hsSnap);
+  const localLibro = hsSnap.filter(h => h._source === 'b2').reduce((s, h) => s + h.valLibro, 0);
+  const extLibro = hsSnap.filter(h => h._source === 'b5').reduce((s, h) => s + h.valLibro, 0);
+  const agfList = aggregateByAGF(hsSnap);
+  const insList = aggregateByInsurer(hsSnap);
 
   // NOTA: para que los Val. Libro coincidan con el panel "Por Compañía"
   // (que muestra el último período), las tablas Top 15 y Distribución
@@ -5760,7 +5764,8 @@ function renderInsurerByAGF(recs, lastP, agfsForFilter, totLibroAll) {
 /* ---- Instruments view ---- */
 
 function renderInstruments() {
-  const hs = activeHoldings();
+  // Foto consolidada por aseguradora — los B.2 son saldos al cierre, no flujos.
+  const hs = latestSnapshotByInsurer(activeHoldings());
   const container = document.getElementById('instruments-content');
   if (STATE.files.length === 0) {
     container.innerHTML = emptyStateB2Only('el listado de instrumentos');
@@ -6154,7 +6159,8 @@ function renderExtranjero() {
     return;
   }
 
-  const records = activeRecordsB5();
+  // Foto consolidada por aseguradora — los B.5 también son saldos al cierre.
+  const records = latestSnapshotByInsurer(activeRecordsB5());
   const deuda = records.filter(r => r._subtype === 'deuda');
   const cuotas = records.filter(r => r._subtype === 'cuota');
   const totalDeuda = deuda.reduce((s, r) => s + (r.valorFinal || 0), 0);
@@ -6378,7 +6384,8 @@ function renderExtranjero() {
 function renderExtranjeroDetail(rut) {
   const detail = document.getElementById('b5-insurer-detail');
   if (!detail) return;
-  const records = activeRecordsB5();
+  // Foto consolidada por aseguradora (saldos al cierre, no acumulado).
+  const records = latestSnapshotByInsurer(activeRecordsB5());
 
   if (!rut) {
     // Resumen comparativo: tabla con todas las compañías + sus totales B.5
