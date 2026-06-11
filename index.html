@@ -1809,9 +1809,9 @@
 </div>
 <div class="page-title-bar">
   <div class="left">
-    <strong>Decoder de Cartera B.2 + B.5</strong>
+    <strong>Decoder de Cartera CMF</strong>
     <span class="sep">·</span>
-    Análisis de exposición local y extranjera en compañías de seguros chilenas
+    Análisis Top Down de inversiones de compañías de seguros chilenas (B.1 · B.2 · B.4 · B.5 · B.6 · B.7 · B.8)
   </div>
   <div class="right" id="page-period-info">Sin archivos cargados</div>
 </div>
@@ -10016,7 +10016,20 @@ function renderActiveTab() {
     case 'extranjero':  renderExtranjero(); break;
     case 'quality':     renderQuality(); break;
     case 'pulso':       renderPulsoAmeris(); break;
-    case 'topdown':     renderTopDown(); break;
+    case 'topdown':
+      try { renderTopDown(); }
+      catch (e) {
+        console.error('renderTopDown error:', e);
+        const c = document.getElementById('topdown-content');
+        if (c) c.innerHTML = `
+          <div style="background:#fef2f2;border:2px solid #b91c1c;border-radius:6px;padding:18px;margin:20px 0;color:#7f1d1d">
+            <strong style="font-size:14px">⚠ Error al renderizar la pestaña Top Down</strong>
+            <div style="margin-top:8px;font-size:12px;font-family:monospace;background:white;padding:10px;border-radius:4px;border:1px solid #fca5a5">${escapeHtml(e && e.message || String(e))}</div>
+            <div style="margin-top:8px;font-size:11.5px">Abrí la consola (F12) para ver el stack trace completo. Compartí ese log para diagnosticar.</div>
+          </div>
+        `;
+      }
+      break;
   }
 }
 
