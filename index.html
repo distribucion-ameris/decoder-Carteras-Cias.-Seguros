@@ -8166,6 +8166,276 @@ function _openCorrectionPrompt(kind, key, current) {
    siguientes (cía. → clase → instrumento) se agregan en bloques sucesivos.
    ======================================================================= */
 
+// Estado de la pestaña Top Down
+let TOPDOWN_OPEN_RUT = '';   // cía con ficha inline abierta (toggle en Nivel 1)
+let TOPDOWN_FULL_RUT = '';   // cía en vista plena (Nivel 2 expandido)
+let _topdownPromedioCache = { key: '', value: null };
+
+// Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
+// B.8 manda como fuente de verdad si está cargado. Si no, se suman los
+// archivos detalle disponibles (con banner indicando fallback).
+function carteraConsolidadaTopDown(rut) {
+  const all = activeFiles();
+  const filesCia = all.filter(f => f.insurerRut === rut);
+  const lastByType = (t) => {
+    const xs = filesCia.filter(f => (f.fileType || 'b2') === t);
+    if (xs.length === 0) return null;
+    return xs.reduce((a, b) => (a.periodo > b.periodo ? a : b));
+  };
+  const lastB8 = lastByType('b8');
+  const lastB1 = lastByType('b1');
+  const lastB2 = lastByType('b2');
+  const lastB4 = lastByType('b4');
+  const lastB5 = lastByType('b5');
+  const lastB6 = lastByType('b6');
+  const lastB7 = lastByType('b7');
+
+  const byFamilia = {};
+  for (const fam of B8_FAMILIA_ORDER) byFamilia[fam] = 0;
+  let totalAUM = 0;
+  let source = 'b8';
+
+  if (lastB8) {
+    for (const e of (lastB8.cartera || [])) {
+      const fam = e.familia || 'Otros';
+      byFamilia[fam] = (byFamilia[fam] || 0) + (e.vf || 0);
+      totalAUM += e.vf || 0;
+    }
+  } else {
+    source = 'detalle';
+    if (lastB1) for (const r of (lastB1.b1Records || [])) {
+      const fam = r.familia || 'Renta fija';
+      byFamilia[fam] = (byFamilia[fam] || 0) + (r.valorFinalCLP || 0);
+      totalAUM += r.valorFinalCLP || 0;
+    }
+    if (lastB2) for (const h of (lastB2.holdings || [])) {
+      if (!h.tipoInst) continue;
+      const fam = h.tipoInst.startsWith('CFI') ? 'CFI nacional' : 'Renta variable';
+      byFamilia[fam] = (byFamilia[fam] || 0) + (h.valLibro || 0);
+      totalAUM += h.valLibro || 0;
+    }
+    if (lastB4) for (const r of (lastB4.b4Records || [])) {
+      byFamilia['Bienes raíces'] = (byFamilia['Bienes raíces'] || 0) + (r.valorFinalCLP || 0);
+      totalAUM += r.valorFinalCLP || 0;
+    }
+    if (lastB5) for (const r of (lastB5.b5Records || [])) {
+      const fam = r._subtype === 'deuda' ? 'Renta fija extran.' : 'Fondos extran.';
+      byFamilia[fam] = (byFamilia[fam] || 0) + (r.valorFinal || 0);
+      totalAUM += r.valorFinal || 0;
+    }
+    if (lastB6) for (const r of (lastB6.b6Records || [])) {
+      byFamilia[r.familia] = (byFamilia[r.familia] || 0) + (r.valorFinalCLP || 0);
+      totalAUM += r.valorFinalCLP || 0;
+    }
+    if (lastB7) for (const r of (lastB7.b7Records || [])) {
+      byFamilia['Derivados'] = (byFamilia['Derivados'] || 0) + (r.valorFinalCLP || 0);
+      totalAUM += r.valorFinalCLP || 0;
+    }
+  }
+
+  const archivos = [
+    { tipo:'B.1', desc:'Renta fija', presente:!!lastB1, n:lastB1?(lastB1.b1Records||[]).length:0, periodo:lastB1?.periodo,
+      total:lastB1 ? (lastB1.b1Records||[]).reduce((s,r)=>s+(r.valorFinalCLP||0),0) : 0 },
+    { tipo:'B.2', desc:'CFI nacional + acciones', presente:!!lastB2, n:lastB2?(lastB2.holdings||[]).length:0, periodo:lastB2?.periodo,
+      total:lastB2 ? (lastB2.holdings||[]).reduce((s,h)=>s+(h.valLibro||0),0) : 0 },
+    { tipo:'B.4', desc:'Bienes raíces', presente:!!lastB4, n:lastB4?(lastB4.b4Records||[]).length:0, periodo:lastB4?.periodo,
+      total:lastB4 ? (lastB4.b4Records||[]).reduce((s,r)=>s+(r.valorFinalCLP||0),0) : 0 },
+    { tipo:'B.5', desc:'Extranjero', presente:!!lastB5, n:lastB5?(lastB5.b5Records||[]).length:0, periodo:lastB5?.periodo,
+      total:lastB5 ? (lastB5.b5Records||[]).reduce((s,r)=>s+(r.valorFinal||0),0) : 0 },
+    { tipo:'B.6', desc:'Otras + alternativos', presente:!!lastB6, n:lastB6?(lastB6.b6Records||[]).length:0, periodo:lastB6?.periodo,
+      total:lastB6 ? (lastB6.b6Records||[]).reduce((s,r)=>s+(r.valorFinalCLP||0),0) : 0 },
+    { tipo:'B.7', desc:'Derivados (MTM)', presente:!!lastB7, n:lastB7?(lastB7.b7Records||[]).length:0, periodo:lastB7?.periodo,
+      total:lastB7 ? (lastB7.b7Records||[]).reduce((s,r)=>s+(r.valorFinalCLP||0),0) : 0 },
+    { tipo:'B.8', desc:'Composición consolidada', presente:!!lastB8, n:lastB8?(lastB8.cartera||[]).length:0, periodo:lastB8?.periodo,
+      total:lastB8 ? (lastB8.cartera||[]).reduce((s,e)=>s+(e.vf||0),0) : 0 },
+  ];
+
+  let reconciliacion = null;
+  if (lastB8 && (lastB1||lastB2||lastB4||lastB5||lastB6||lastB7)) {
+    const detail = archivos.filter(a => a.tipo !== 'B.8' && a.presente).reduce((s,a)=>s+a.total,0);
+    const b8 = archivos.find(a => a.tipo === 'B.8').total;
+    const ratio = b8 > 0 ? detail / b8 : 0;
+    reconciliacion = { detail, b8, ratio, ok: Math.abs(ratio - 1) < 0.05 };
+  }
+
+  return {
+    rut,
+    name: (lastB8 || lastB1 || lastB2 || lastB4 || lastB5 || lastB6 || lastB7)?.insurerName || `(RUT ${fmtRut(rut)})`,
+    periodo: lastB8?.periodo || lastB1?.periodo || lastB2?.periodo || lastB5?.periodo,
+    totalAUM, byFamilia, archivos, reconciliacion, source,
+  };
+}
+
+// Promedio del sistema: % por familia sobre TODAS las cías con B.8 activo.
+// Universo fijo (incluye la cía actual). Cacheado por la lista de B.8 activos.
+function promedioSistemaTopDown() {
+  const b8 = activeFilesB8();
+  if (b8.length === 0) return null;
+  const lastPerIns = new Map();
+  for (const f of b8) {
+    const cur = lastPerIns.get(f.insurerRut);
+    if (!cur || f.periodo > cur) lastPerIns.set(f.insurerRut, f.periodo);
+  }
+  const snap = b8.filter(f => lastPerIns.get(f.insurerRut) === f.periodo);
+  const key = snap.map(f => f.fileName).sort().join('|');
+  if (_topdownPromedioCache.key === key && _topdownPromedioCache.value) return _topdownPromedioCache.value;
+
+  const totals = {}; let sysAUM = 0;
+  for (const fam of B8_FAMILIA_ORDER) totals[fam] = 0;
+  for (const f of snap) {
+    for (const e of (f.cartera||[])) {
+      const fam = e.familia || 'Otros';
+      totals[fam] = (totals[fam] || 0) + (e.vf || 0);
+      sysAUM += e.vf || 0;
+    }
+  }
+  const byFamilia = {};
+  for (const fam in totals) byFamilia[fam] = sysAUM > 0 ? (totals[fam] / sysAUM * 100) : 0;
+  const value = { byFamilia, sysAUM, nCias: snap.length };
+  _topdownPromedioCache = { key, value };
+  return value;
+}
+
+// Render del cuerpo de la ficha de una cía. Igual para inline y vista plena.
+function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
+  const cart = carteraConsolidadaTopDown(rut);
+  const prom = promedioSistemaTopDown();
+  const pctSistema = sysAUM > 0 ? cart.totalAUM / sysAUM * 100 : 0;
+  const showExpand = !opts || !opts.isFull;
+
+  // Familias presentes en cía o sistema (orden top-down)
+  const families = B8_FAMILIA_ORDER.filter(fam =>
+    (cart.byFamilia[fam] || 0) > 0 || (prom && (prom.byFamilia[fam] || 0) > 0)
+  );
+
+  const pairRows = families.map(fam => {
+    const valCia = cart.byFamilia[fam] || 0;
+    const pctCia = cart.totalAUM > 0 ? valCia / cart.totalAUM * 100 : 0;
+    const pctSis = (prom && prom.byFamilia[fam]) || 0;
+    const desvio = pctCia - pctSis;
+    const color = B8_FAMILIA_COLORS[fam] || '#7F7F7F';
+    const desvioColor = Math.abs(desvio) > 10 ? (desvio > 0 ? '#047857' : '#b91c1c') : 'var(--c-muted)';
+    const desvioArrow = Math.abs(desvio) > 5 ? (desvio > 0 ? '▲' : '▼') : '';
+    return `
+      <div style="display:grid;grid-template-columns:180px 60px 1fr 60px 1fr 95px;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--c-border);font-size:12px">
+        <span style="color:${color};font-weight:600">${escapeHtml(fam)}</span>
+        <span class="num" style="font-weight:600">${pctCia.toFixed(1)}%</span>
+        <div style="background:#f1f5f9;border-radius:3px;height:14px;position:relative;min-width:60px">
+          <div style="background:${color};height:100%;width:${Math.min(100,pctCia).toFixed(1)}%;border-radius:3px"></div>
+        </div>
+        <span class="num" style="color:var(--c-muted)">${pctSis.toFixed(1)}%</span>
+        <div style="background:#f1f5f9;border-radius:3px;height:14px;position:relative;min-width:60px">
+          <div style="background:${color};opacity:0.4;height:100%;width:${Math.min(100,pctSis).toFixed(1)}%;border-radius:3px"></div>
+        </div>
+        <span class="num" style="color:${desvioColor};font-weight:600">${desvio>0?'+':''}${desvio.toFixed(1)}pp ${desvioArrow}</span>
+      </div>
+    `;
+  }).join('');
+
+  // Insights automáticos (desvíos > 10pp)
+  const insights = [];
+  for (const fam of families) {
+    const valCia = cart.byFamilia[fam] || 0;
+    const pctCia = cart.totalAUM > 0 ? valCia / cart.totalAUM * 100 : 0;
+    const pctSis = (prom && prom.byFamilia[fam]) || 0;
+    const desvio = pctCia - pctSis;
+    if (Math.abs(desvio) > 10) {
+      const tipo = desvio > 0 ? 'Sobreponderada' : 'Subponderada';
+      const color = desvio > 0 ? '#047857' : '#b91c1c';
+      insights.push(`<li><strong style="color:${color}">${tipo}</strong> en <strong>${escapeHtml(fam)}</strong> (${desvio>0?'+':''}${desvio.toFixed(1)} pp vs sistema)</li>`);
+    }
+  }
+  const b7 = cart.archivos.find(a => a.tipo === 'B.7');
+  if (b7 && b7.presente && Math.abs(b7.total) > 1e9) {
+    insights.push(`<li>Derivados MTM <strong style="color:${b7.total>0?'#047857':'#b91c1c'}">${b7.total>0?'positivo':'negativo'}</strong>: ${fmtMoney(b7.total)} (cobertura cambio/tasa)</li>`);
+  }
+  if (cart.source === 'detalle') {
+    insights.push(`<li>⚠ <strong>Sin B.8 cargado</strong> — totales estimados de archivos detalle. Cargá el B.8 para tener la composición oficial CMF.</li>`);
+  }
+
+  const recBanner = (() => {
+    if (!cart.reconciliacion) return '';
+    const r = cart.reconciliacion;
+    const pct = (r.ratio * 100).toFixed(1);
+    if (r.ok) {
+      return `<div style="background:#f0fdf4;border-left:3px solid #047857;padding:8px 12px;font-size:12px;color:#065f46;margin:10px 0;border-radius:4px">✓ Reconciliado: detalle suma ${pct}% del B.8 consolidado.</div>`;
+    } else {
+      return `<div style="background:#fff7ed;border-left:3px solid #f59e0b;padding:8px 12px;font-size:12px;color:#92400e;margin:10px 0;border-radius:4px">⚠ Detalle suma ${pct}% del B.8 — algunos archivos pueden estar faltantes o desfasados.</div>`;
+    }
+  })();
+
+  const archivoRows = cart.archivos.map(a => {
+    const icon = a.presente ? '<span style="color:#047857;font-size:14px">✓</span>' : '<span style="color:#9ca3af;font-size:14px">🚧</span>';
+    const btn = a.presente
+      ? `<button class="btn btn-action" disabled style="opacity:0.5;font-size:11px;padding:4px 8px" title="Nivel 3 — próximamente">Ver detalle ▸</button>`
+      : '<span style="color:#9ca3af;font-size:11px;font-style:italic">no cargado</span>';
+    return `
+      <div style="display:grid;grid-template-columns:30px 60px 1fr 130px 90px 130px;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--c-border);font-size:12px">
+        ${icon}
+        <span style="font-weight:600">${a.tipo}</span>
+        <span style="color:var(--c-muted)">${escapeHtml(a.desc)}</span>
+        <span class="num">${a.presente ? a.n.toLocaleString('es-CL') + ' reg.' : '—'}</span>
+        <span class="num">${a.presente && a.periodo ? fmtPeriod(a.periodo) : ''}</span>
+        ${btn}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="topdown-cia-card" style="background:white;border-radius:6px;padding:16px 20px;border:1px solid var(--c-border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div style="font-size:11px;color:var(--c-muted);letter-spacing:0.5px;text-transform:uppercase">Compañía</div>
+          <div style="font-size:18px;font-weight:700;color:var(--c-ameris-navy)">${escapeHtml(cart.name)}</div>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">RUT ${fmtRut(rut)}${cart.periodo ? ' · Cierre ' + fmtPeriod(cart.periodo) : ''}</div>
+        </div>
+        ${showExpand ? `<button class="btn btn-action" data-topdown-expand="${escapeHtml(rut)}" style="font-size:12px;padding:6px 12px">⛶ Expandir vista</button>` : ''}
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+        <div style="background:#f8fafc;border-radius:4px;padding:10px 12px">
+          <div style="font-size:10.5px;color:var(--c-muted)">AUM total (cartera)</div>
+          <div style="font-size:17px;font-weight:700;color:var(--c-ameris-blue)">${fmtMoney(cart.totalAUM)}</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:4px;padding:10px 12px">
+          <div style="font-size:10.5px;color:var(--c-muted)">Rank sistema</div>
+          <div style="font-size:17px;font-weight:700">${rank} / ${prom ? prom.nCias : '—'}</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:4px;padding:10px 12px">
+          <div style="font-size:10.5px;color:var(--c-muted)">% del sistema</div>
+          <div style="font-size:17px;font-weight:700">${pctSistema.toFixed(2)}%</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:4px;padding:10px 12px">
+          <div style="font-size:10.5px;color:var(--c-muted)">Archivos cargados</div>
+          <div style="font-size:17px;font-weight:700">${cart.archivos.filter(a => a.presente).length} / 7</div>
+        </div>
+      </div>
+
+      ${recBanner}
+
+      <div style="margin:14px 0 8px;font-size:13px;font-weight:700;color:var(--c-ameris-navy)">Composición por clase de activo · cía vs promedio sistema</div>
+      <div style="display:grid;grid-template-columns:180px 60px 1fr 60px 1fr 95px;gap:10px;padding:6px 0;border-bottom:2px solid var(--c-border);font-size:10.5px;color:var(--c-muted);font-weight:600;text-transform:uppercase">
+        <span>Familia</span><span class="num">Cía %</span><span></span>
+        <span class="num">Sistema %</span><span></span><span class="num">Desvío</span>
+      </div>
+      ${pairRows || '<div style="padding:14px;color:var(--c-muted);font-size:12px">Sin datos para mostrar.</div>'}
+
+      ${insights.length > 0 ? `
+        <div style="margin-top:14px;background:#eff6ff;border-left:3px solid var(--c-ameris-blue);padding:10px 12px;border-radius:4px;font-size:12.5px">
+          <strong style="display:block;margin-bottom:4px;color:var(--c-ameris-navy)">📌 Insights</strong>
+          <ul style="margin:0;padding-left:18px">${insights.join('')}</ul>
+        </div>
+      ` : ''}
+
+      <div style="margin-top:18px;font-size:13px;font-weight:700;color:var(--c-ameris-navy)">Archivos detalle disponibles para drill-down (Nivel 3 · próximamente)</div>
+      <div style="display:grid;grid-template-columns:30px 60px 1fr 130px 90px 130px;gap:8px;padding:6px 0;border-bottom:2px solid var(--c-border);font-size:10.5px;color:var(--c-muted);font-weight:600;text-transform:uppercase;margin-top:6px">
+        <span></span><span>Tipo</span><span>Categoría</span><span class="num">Registros</span><span class="num">Período</span><span></span>
+      </div>
+      ${archivoRows}
+    </div>
+  `;
+}
+
 function renderTopDown() {
   const container = document.getElementById('topdown-content');
   if (STATE.files.length === 0) {
@@ -8182,8 +8452,6 @@ function renderTopDown() {
     return;
   }
 
-  // Foto consolidada: una entrada por (cía, tipo) usando la última presentación
-  // disponible de cada cía. dentro del filtro multi-período activo.
   const lastPerIns = new Map();
   for (const f of b8Files) {
     const cur = lastPerIns.get(f.insurerRut);
@@ -8215,7 +8483,7 @@ function renderTopDown() {
     .filter(f => f.total > 0)
     .sort((a, b) => b.total - a.total);
 
-  // Ranking de aseguradoras (Top 10 por AUM B.8)
+  // Ranking de aseguradoras por AUM B.8
   const insurerMap = new Map();
   for (const f of snapshotFiles) {
     const t = f.cartera.reduce((s, e) => s + (e.vf || 0), 0);
@@ -8225,11 +8493,29 @@ function renderTopDown() {
     .filter(c => c.total > 0)
     .sort((a, b) => b.total - a.total);
 
-  // Período más reciente representado
+  // === MODO VISTA PLENA (Nivel 2 expandido) ===
+  if (TOPDOWN_FULL_RUT && insurerRanking.find(c => c.rut === TOPDOWN_FULL_RUT)) {
+    const rankFull = insurerRanking.findIndex(c => c.rut === TOPDOWN_FULL_RUT) + 1;
+    container.innerHTML = `
+      <div style="margin-bottom:12px">
+        <button class="btn btn-action" id="topdown-back-btn" style="font-size:12.5px;padding:7px 14px">← Volver al sistema</button>
+      </div>
+      ${renderTopDownCiaCard(TOPDOWN_FULL_RUT, rankFull, sysTotal, { isFull: true })}
+    `;
+    setTimeout(() => {
+      const back = document.getElementById('topdown-back-btn');
+      if (back) back.addEventListener('click', () => {
+        TOPDOWN_FULL_RUT = '';
+        renderTopDown();
+      });
+    }, 0);
+    return;
+  }
+
+  // === MODO NIVEL 1 (vista normal con inline expand) ===
   const periodsHere = Array.from(new Set(snapshotFiles.map(f => f.periodo))).sort();
   const lastP = periodsHere[periodsHere.length - 1] || '—';
 
-  // Render
   const famRows = families.map(fam => {
     const pct = sysTotal > 0 ? (fam.total / sysTotal * 100) : 0;
     const color = B8_FAMILIA_COLORS[fam.familia] || '#7F7F7F';
@@ -8245,14 +8531,24 @@ function renderTopDown() {
 
   const top10Rows = insurerRanking.slice(0, 10).map((c, i) => {
     const pct = sysTotal > 0 ? (c.total / sysTotal * 100) : 0;
+    const isOpen = c.rut === TOPDOWN_OPEN_RUT;
+    const chevron = isOpen ? '▼' : '▶';
+    const chevronColor = isOpen ? 'var(--c-ameris-blue)' : 'var(--c-muted)';
+    const rowBg = isOpen ? 'background:#f0f9ff' : '';
     return `
-      <tr>
+      <tr class="topdown-cia-row" data-topdown-rut="${escapeHtml(c.rut)}" style="cursor:pointer;${rowBg}">
         <td class="num">${i + 1}</td>
-        <td><strong>${escapeHtml(c.name)}</strong>
-          <div style="color:var(--c-muted);font-size:11px">RUT ${fmtRut(c.rut)} · ${fmtPeriod(c.periodo)}</div></td>
+        <td>
+          <strong>${escapeHtml(c.name)}</strong>
+          <span style="color:${chevronColor};margin-left:6px;font-size:11px">${chevron}</span>
+          <div style="color:var(--c-muted);font-size:11px">RUT ${fmtRut(c.rut)} · ${fmtPeriod(c.periodo)}</div>
+        </td>
         <td class="num">${fmtMoney(c.total)}</td>
         <td class="num">${pct.toFixed(2)}%</td>
       </tr>
+      ${isOpen ? `<tr><td colspan="4" style="background:#f8fafc;padding:0">
+        <div style="padding:14px">${renderTopDownCiaCard(c.rut, i+1, sysTotal)}</div>
+      </td></tr>` : ''}
     `;
   }).join('');
 
@@ -8276,23 +8572,45 @@ function renderTopDown() {
     </div>
 
     <div class="card" style="margin-top:14px">
-      <div class="card-header"><div class="card-title">Top 10 compañías por AUM (cartera total)</div></div>
+      <div class="card-header"><div class="card-title">Top 10 compañías por AUM (cartera total) · Click para ver Nivel 2</div></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>#</th><th>Compañía</th><th class="num">AUM total</th><th class="num">% sistema</th></tr></thead>
           <tbody>${top10Rows}</tbody>
         </table>
       </div>
-      ${insurerRanking.length > 10 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 10 de ${insurerRanking.length} compañías. Click en una para ver su composición (Nivel 2 · próximamente).</div>` : ''}
+      ${insurerRanking.length > 10 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 10 de ${insurerRanking.length} compañías con B.8 cargado.</div>` : ''}
     </div>
 
     <div class="card" style="margin-top:14px;background:#fff7ed;border-left:4px solid #f59e0b">
       <div style="padding:14px 18px;font-size:13px">
-        <strong>🚧 Niveles 2, 3 y 4 en construcción.</strong> Esta primera versión muestra el agregado del sistema (Nivel 1).
-        Los siguientes bloques agregan: drill-down por compañía, drill-down por clase de activo (renta fija con B.1, bienes raíces con B.4, etc.) y detalle por instrumento.
+        <strong>🚧 Niveles 3 y 4 en construcción.</strong> El drill-down por clase de activo (renta fija → bonos individuales,
+        bienes raíces → inmuebles, derivados → forwards/swaps, etc.) viene en el próximo bloque.
       </div>
     </div>
   `;
+
+  // Wire click handlers
+  setTimeout(() => {
+    container.querySelectorAll('.topdown-cia-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        // No expandir si el click vino de un botón dentro de la ficha
+        if (e.target.closest('button')) return;
+        const rut = row.dataset.topdownRut;
+        TOPDOWN_OPEN_RUT = TOPDOWN_OPEN_RUT === rut ? '' : rut;
+        renderTopDown();
+      });
+    });
+    container.querySelectorAll('[data-topdown-expand]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        TOPDOWN_FULL_RUT = btn.dataset.topdownExpand;
+        TOPDOWN_OPEN_RUT = '';
+        renderTopDown();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+  }, 0);
 }
 
 /* =======================================================================
