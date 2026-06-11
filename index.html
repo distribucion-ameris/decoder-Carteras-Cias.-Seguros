@@ -1972,10 +1972,13 @@
 
   <!-- TABS -->
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="general" role="tab" title="Vista panorámica del sistema: KPIs, distribución por categoría, top AGFs y top compañías">Resumen General</button>
-    <button class="tab" data-tab="topdown" role="tab" title="Análisis Top Down: del sistema asegurador completo (cartera consolidada B.8) hasta el detalle de cada compañía">Top Down · Sistema</button>
-    <button class="tab" data-tab="agf" role="tab" title="Análisis agrupado por AGF/Emisor con drill-down al detalle por fondo y compañía cliente">Por AGF / Emisor</button>
+    <!-- Pestañas ordenadas por granularidad creciente del análisis top-down:
+         Sistema (vista más amplia) → Cía → AGF/Fondo (cortes específicos) →
+         vistas complementarias (evolución temporal, extranjero, Pulso Ameris). -->
+    <button class="tab active" data-tab="topdown" role="tab" title="Análisis Top Down: del sistema asegurador completo (cartera consolidada B.8) hasta el detalle de cada compañía">Top Down · Sistema</button>
+    <button class="tab" data-tab="general" role="tab" title="Vista panorámica del sistema: KPIs, distribución por categoría, top AGFs y top compañías">Resumen General</button>
     <button class="tab" data-tab="insurer" role="tab" title="Detalle de la cartera de cada compañía de seguros, agrupado por categoría">Por Compañía de Seguros</button>
+    <button class="tab" data-tab="agf" role="tab" title="Análisis agrupado por AGF/Emisor con drill-down al detalle por fondo y compañía cliente">Por AGF / Emisor</button>
     <button class="tab" data-tab="evolucion" role="tab" title="Evolución mes a mes con sparklines, gráfico de tendencia y top movers">Evolución</button>
     <button class="tab" data-tab="extranjero" role="tab" title="Inversión en el extranjero (archivos B.5): bonos, fondos y acciones extranjeras">Extranjero (B.5)</button>
     <button class="tab tab-ameris" data-tab="pulso" role="tab" title="Análisis específico para Ameris AGF: AUM, ranking, market share, concentración, tendencias">Pulso Ameris</button>
@@ -1984,7 +1987,7 @@
   <div class="tab-panels">
 
     <!-- TAB: GENERAL -->
-    <section class="tab-panel active" id="tab-general">
+    <section class="tab-panel" id="tab-general">
       <div id="general-content"></div>
     </section>
 
@@ -2018,8 +2021,9 @@
       <div id="pulso-content"></div>
     </section>
 
-    <!-- TAB: TOP DOWN · SISTEMA — análisis de cartera consolidada (B.8) -->
-    <section class="tab-panel" id="tab-topdown">
+    <!-- TAB: TOP DOWN · SISTEMA — análisis de cartera consolidada (B.8).
+         Panel activo por defecto al cargar el dashboard (vista de entrada). -->
+    <section class="tab-panel active" id="tab-topdown">
       <div id="topdown-content"></div>
     </section>
 
