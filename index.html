@@ -2259,7 +2259,7 @@ function categorize(rec) {
 // Filename pattern: aYYYYMMv.RUT_DIGITS  (B.2 acciones/cuotas)
 //                   xYYYYMMv.RUT_DIGITS  (B.5 inversiones extranjero)
 function inferFromFilename(filename) {
-  const m = filename.match(/^[axc](\d{6})v\.([0-9Kk]+)/i);
+  const m = filename.match(/^[axci](\d{6})[vg]\.([0-9Kk]+)/i);
   if (!m) return null;
   const periodo = m[1];
   const rutDigits = m[2];
@@ -2270,26 +2270,28 @@ function inferFromFilename(filename) {
   return { rut, nombre, periodo };
 }
 
-// Detect file type from filename (a* = B.2, x* = B.5, c* = B.8). Fallback a
-// largo de línea: B.2 ≈ 215+, B.5 ≈ 611, B.8 ≈ 138.
+// Detect file type from filename. Soporta sufijo v (Vida) o g (Generales).
+// a* = B.2, x* = B.5, c* = B.8, i* = B.1. Fallback por largo de línea.
 function detectFileType(filename, sampleLine) {
-  if (/^a\d{6}v\.[0-9Kk]+/i.test(filename)) return 'b2';
-  if (/^x\d{6}v\.[0-9Kk]+/i.test(filename)) return 'b5';
-  if (/^c\d{6}v\.[0-9Kk]+/i.test(filename)) return 'b8';
-  if (sampleLine && sampleLine.length >= 600) return 'b5';
+  if (/^a\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b2';
+  if (/^x\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b5';
+  if (/^c\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b8';
+  if (/^i\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b1';
+  if (sampleLine && sampleLine.length >= 950) return 'b1';   // 970 chars
+  if (sampleLine && sampleLine.length >= 600) return 'b5';   // 611 chars
   if (sampleLine && sampleLine.length >= 138 && sampleLine.length < 200) return 'b8';
   return 'b2';
 }
 
-// Parse a full file's text content. Dispatches to B.2 / B.5 / B.8 parser.
+// Parse a full file's text content. Dispatches to parser por fileType.
 function parseFile(text, filename) {
-  // B.8 tiene líneas más cortas (138 chars), no filtramos tan agresivo.
   const ft = detectFileType(filename, text.split(/\r?\n/)[0] || '');
   const minLen = ft === 'b8' ? 50 : 100;
   const lines = text.split(/\r?\n/).filter(l => l.length >= minLen);
   if (lines.length === 0) return null;
   if (ft === 'b5') return parseB5File(lines, filename);
   if (ft === 'b8') return parseB8File(lines, filename);
+  if (ft === 'b1') return parseB1File(lines, filename);
   return parseB2File(lines, filename);
 }
 
@@ -2710,8 +2712,9 @@ function parseB8File(lines, filename) {
   // Header: '1' + RUT(9) + DV(1) + Nombre(60) + Periodo(6) + padding.
   const header = lines[0];
   let rut, nombre, periodo, detailStart;
+  // El filename es fuente de verdad para período (header puede tener UTF-8 shift).
+  const inferred = inferFromFilename(filename);
   if (!header || header.charAt(0) !== '1' || header.length < 77) {
-    const inferred = inferFromFilename(filename);
     if (!inferred) return null;
     rut = inferred.rut;
     nombre = inferred.nombre;
@@ -2722,7 +2725,7 @@ function parseB8File(lines, filename) {
     const dv = header.substring(10, 11).toUpperCase();
     rut = rutDigits + '-' + dv;
     nombre = header.substring(11, 71).trim();
-    periodo = header.substring(71, 77).trim();
+    periodo = (inferred && inferred.periodo) || header.substring(71, 77).trim();
     detailStart = 1;
     // Override de nombre si está en mapa curado
     if (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[rut]) {
@@ -2757,6 +2760,221 @@ function parseB8File(lines, filename) {
     periodo: periodo,
     cartera: cartera,           // [{tipo, vf, rep, ...}, ...]
     parseStats: { totalDetailLines, parsed: cartera.length, skipped: skippedLines },
+  };
+}
+
+/* =======================================================================
+   PARSER for B.1 (Instrumentos de Renta Fija) fixed-width records.
+   File naming: iAAAAMMv.<RUT_CIA>  (e.g., i202603v.96812960)
+   Líneas de 970 caracteres. Tipo 1 = header, Tipo 2 = detalle por bono,
+   Tipo 3 = trailer. Source: Circular CMF N° 1.835 + decoder_b1.py oficial.
+
+   El parser extrae el subconjunto de campos críticos para el dashboard
+   top-down. Para campos no incluidos consultar el decoder Python oficial.
+   ======================================================================= */
+
+// Códigos comunes (extraídos del decoder oficial)
+const B1_COD_TIPO_INSTR = {
+  BE:'Bonos de empresas', BEE:'Bonos estados extranjeros',
+  BNEE:'Bonos emp. nac. en exterior', BBFE:'Bonos bancarios en extranjero',
+  BS:'Bonos subordinados', BB:'Bonos bancarios', BBP:'Bonos bancarios perpetuos',
+  BU:'Bonos universitarios/UF', BR:'Bonos de reconocimiento',
+  BTU:'Bonos Tesorería USD', BEBCE:'Bonos BC / Estado',
+  BCU:'Bonos BC Chile (UF)', BCP:'Bonos BC Chile (Pesos)',
+  BTP:'Bonos Tesorería en pesos', CEROCUP:'Bonos cero cupón',
+  DPF:'Depósito plazo fijo', DPR:'Depósito plazo reajustable',
+  LH:'Letras hipotecarias', MHA:'Mutuos hipotecarios — agentes',
+  MHB:'Mutuos hipotecarios — bancos', MHEE:'Mutuos hipotecarios extranjeros',
+  CLEAS:'Contrato leasing', CLEASEE:'Leasing extranjero',
+  CS:'Crédito sindicado', AFR:'Avance final recuperable',
+  AFRV:'AFR Vida', NEERF:'Renta fija extranjera no listada',
+  EC:'Efectos de comercio', BBNEE:'Bonos bancarios nac. en exterior',
+  BBPNEE:'Bonos banc. perp. nac. en exterior', BEC:'Bonos empresas (extr.)',
+  AFROIND:'Avance Final Recuperable indiv.',
+};
+
+const B1_COD_OPERACION = { CDT:'Compra Definitiva', CRV:'Compra c/ Retroventa' };
+
+// Familia top-down para cada tipo de instrumento B.1 (alinea con B.8)
+function b1FamiliaForTipo(tipo) {
+  if (!tipo) return 'Renta fija';
+  // Extranjero
+  if (/EE$/.test(tipo) || tipo === 'BEE' || tipo === 'BBFE' || tipo === 'BBNEE'
+      || tipo === 'BBPNEE' || tipo === 'NEERF' || tipo === 'MHEE' || tipo === 'CLEASEE') {
+    return 'Renta fija extran.';
+  }
+  return 'Renta fija';
+}
+
+// Subtipo deducido del CODIGO_OPERACION y TIPO_INSTRUMENTO
+function b1SubtypeFor(codOp, tipo) {
+  if (codOp === 'CRV') return 'pacto';
+  if (tipo === 'MHA' || tipo === 'MHB' || tipo === 'MHEE') return 'mutuo_hipotecario';
+  if (tipo === 'CLEAS' || tipo === 'CLEASEE') return 'leasing';
+  if (tipo === 'CS') return 'credito_sindicado';
+  if (tipo === 'LH') return 'letra_hipotecaria';
+  if (tipo === 'DPF' || tipo === 'DPR') return 'deposito';
+  return 'bono';
+}
+
+// Helpers de parseo numérico/fecha B.1
+function _b1ParseInt(s) {
+  if (!s) return 0;
+  const t = s.trim();
+  if (!t) return 0;
+  const sign = t[0] === '-' ? -1 : 1;
+  const num = (t[0] === '+' || t[0] === '-') ? t.substring(1) : t;
+  const n = parseInt(num, 10);
+  return isFinite(n) ? sign * n : 0;
+}
+// Decimal implícito: "0000038700" con (3,4) → 3.87 (3 enteros + 4 decimales).
+function _b1ParseDecimal(s, intDigits, decDigits, signed) {
+  if (!s) return 0;
+  let t = s.trim();
+  if (!t) return 0;
+  let sign = 1;
+  if (signed && (t[0] === '+' || t[0] === '-')) {
+    sign = t[0] === '-' ? -1 : 1;
+    t = t.substring(1);
+  }
+  const total = intDigits + decDigits;
+  const padded = t.padStart(total, '0');
+  const intPart = padded.substring(0, intDigits) || '0';
+  const decPart = padded.substring(intDigits, total) || '0';
+  const n = parseFloat(intPart + '.' + decPart);
+  return isFinite(n) ? sign * n : 0;
+}
+function _b1ParseDate(s) {
+  if (!s) return '';
+  const t = s.trim();
+  if (!t || t === '00000000' || t.length !== 8 || t === '19000101') return '';
+  const y = parseInt(t.substring(0, 4), 10);
+  const m = parseInt(t.substring(4, 6), 10);
+  const d = parseInt(t.substring(6, 8), 10);
+  if (!isFinite(y) || y < 1900 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+// Parsea una línea de detalle (tipo 2) de B.1. Posiciones del decoder oficial.
+function parseB1Detail(line) {
+  const sub = (i, len) => line.substring(i, i + len);
+  const codOp = sub(1, 3).trim();
+  const tipoInstr = sub(43, 10).trim();
+  const moneda = sub(150, 6).trim();
+  const nroRut = sub(33, 9).replace(/^0+/, '') || '0';
+  const dvRut = sub(42, 1);
+  return {
+    // Identificación
+    codOperacion: codOp,
+    codOperacionDesc: B1_COD_OPERACION[codOp] || codOp,
+    folio: sub(4, 10).trim().replace(/^0+/, '') || '0',
+    fechaCompra: _b1ParseDate(sub(17, 8)),
+    rutEmisor: `${nroRut}-${dvRut}`,
+    tipoInstrumento: tipoInstr,
+    tipoInstrumentoDesc: B1_COD_TIPO_INSTR[tipoInstr] || tipoInstr,
+    nemo: sub(53, 30).trim(),
+    fechaEmision: _b1ParseDate(sub(83, 8)),
+    serie: sub(104, 10).trim(),
+    pais: sub(114, 2).trim(),
+    // Plazo y valoración nominal
+    valorNominal: _b1ParseDecimal(sub(116, 17), 13, 4),
+    valorNominalVigente: _b1ParseDecimal(sub(133, 17), 13, 4),
+    moneda,
+    activoRespaldaReserva: sub(178, 5).trim(),
+    nombreFondo: sub(183, 30).trim(),
+    nombreCartera: sub(213, 30).trim(),
+    activoCalce: sub(243, 3).trim(),
+    clasificacionRiesgo: sub(249, 15).trim(),
+    // Vencimiento y tasas
+    fechaVencimiento: _b1ParseDate(sub(266, 8)),
+    tasaEmision: _b1ParseDecimal(sub(283, 8), 3, 4, true) / 100,
+    metodoValorizEEFF: sub(310, 6).trim(),
+    criterioValorizacion: sub(317, 2).trim(),
+    codigoActividadEcon: sub(331, 6).trim(),
+    grupoEconomico: sub(337, 3).trim(),
+    fuentePrecios: sub(340, 13).trim(),
+    // Sección 6: valorización (CLAVE para totales)
+    valorCompra: _b1ParseInt(sub(801, 13)),
+    tirSinCosto: _b1ParseDecimal(sub(814, 8), 3, 4, true) / 100,
+    tirCompra: _b1ParseDecimal(sub(822, 8), 3, 4, true) / 100,
+    costoAmortizadoUM: _b1ParseDecimal(sub(830, 15), 11, 4),
+    costoAmortizadoCLP: _b1ParseInt(sub(845, 13)),  // pesos directos
+    tirMercado: _b1ParseDecimal(sub(858, 8), 3, 4, true) / 100,
+    valorRazonable: _b1ParseInt(sub(866, 13)),       // pesos directos
+    deterioro: _b1ParseInt(sub(879, 14)),
+    valorFinalMS: _b1ParseInt(sub(893, 13)),         // MILES de pesos
+    // Custodia
+    custodia: sub(906, 3).trim(),
+    nombreCustodio: sub(909, 60).trim(),
+    // Pactos retroventa (solo si codOp === 'CRV')
+    valorPactado: _b1ParseDecimal(sub(379, 17), 13, 4),
+    monedaPacto: sub(396, 6).trim(),
+    fechaVencPacto: _b1ParseDate(sub(402, 8)),
+    tasaPacto: _b1ParseDecimal(sub(410, 7), 3, 4) / 100,
+    valorPactoMS: _b1ParseInt(sub(430, 13)),
+    // Mutuos hipotecarios y leasing (solo si _subtype === 'mutuo_hipotecario' o 'leasing')
+    nroDividendosImpagos: _b1ParseInt(sub(503, 3)),
+    saldoInsolutoDeudaMS: _b1ParseInt(sub(591, 13)),
+    valorComercialMS: _b1ParseInt(sub(553, 13)),
+  };
+}
+
+function parseB1File(lines, filename) {
+  const header = lines[0];
+  let rut, nombre, periodo, detailStart;
+  // El filename SIEMPRE tiene período y RUT consistentes. Lo usamos como
+  // fuente de verdad: si el nombre tiene caracteres UTF-8 multi-byte (ej. Ñ)
+  // el header se desplaza y dar substring(71,77) puede arrojar '20260'.
+  const inferred = inferFromFilename(filename);
+  if (!header || header.charAt(0) !== '1' || header.length < 77) {
+    if (!inferred) return null;
+    rut = inferred.rut; nombre = inferred.nombre; periodo = inferred.periodo;
+    detailStart = 0;
+  } else {
+    const rutDigits = header.substring(1, 10);
+    const dv = header.substring(10, 11).toUpperCase();
+    rut = rutDigits + '-' + dv;
+    nombre = header.substring(11, 71).trim();
+    periodo = (inferred && inferred.periodo) || header.substring(71, 77).trim();
+    detailStart = 1;
+    if (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[rut]) {
+      nombre = INSURER_NAME_OVERRIDES[rut];
+    } else if (FILENAME_RUT_TO_INSURER) {
+      const stripped = rutDigits.replace(/^0+/, '');
+      if (FILENAME_RUT_TO_INSURER[stripped]) nombre = FILENAME_RUT_TO_INSURER[stripped];
+    }
+  }
+
+  const holdings = [];
+  let totalDetailLines = 0, skippedLines = 0;
+  for (let i = detailStart; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.charAt(0) !== '2') continue;
+    totalDetailLines++;
+    if (line.length < 970) { skippedLines++; continue; }
+    try {
+      const rec = parseB1Detail(line);
+      rec._subtype = b1SubtypeFor(rec.codOperacion, rec.tipoInstrumento);
+      rec.familia = b1FamiliaForTipo(rec.tipoInstrumento);
+      // Valor final en CLP normalizado para sumas. Prioriza valorFinalMS (MILES)
+      // → CLP. Si está en cero, usa valorRazonable o costoAmortizadoCLP como
+      // fallback (algunos instrumentos solo informan uno).
+      rec.valorFinalCLP = rec.valorFinalMS * 1000 || rec.valorRazonable || rec.costoAmortizadoCLP || 0;
+      holdings.push(rec);
+    } catch (e) {
+      console.warn('Parse error B.1:', filename, 'line', i, e);
+      skippedLines++;
+    }
+  }
+
+  return {
+    fileType: 'b1',
+    fileName: filename,
+    insurerRut: rut,
+    insurerName: nombre,
+    periodo: periodo,
+    b1Records: holdings,
+    parseStats: { totalDetailLines, parsed: holdings.length, skipped: skippedLines },
   };
 }
 
@@ -3411,6 +3629,7 @@ function activeFiles(ignoreFilters = false) {
 function activeFilesB2(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => (f.fileType || 'b2') === 'b2'); }
 function activeFilesB5(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b5'); }
 function activeFilesB8(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b8'); }
+function activeFilesB1(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b1'); }
 
 // Vista unificada del dashboard: cuotas de fondos de inversión (CFI), tanto
 // nacionales (B.2) como administradas por AGFs chilenas con activos en el
