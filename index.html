@@ -1874,53 +1874,35 @@
     </div>
   </div>
 
-  <!-- DROP ZONES — dos zonas separadas para evitar confusión entre B.2 y B.5.
-       La detección es por filename (a* = B.2, x* = B.5), así que cualquier zona
-       acepta cualquier archivo y lo enruta correctamente; las dos zonas son una
-       guía visual para el usuario. -->
-  <div class="dropzone-grid" id="dropzone-grid">
-    <section class="dropzone dropzone-b2" id="dropzone-b2" data-ftype="b2">
+  <!-- DROP ZONE UNIFICADA — una sola zona acepta cualquier archivo CMF
+       (B.1/B.2/B.4/B.5/B.6/B.7/B.8) y carpetas. La detección por filename
+       enruta cada archivo al parser correcto automáticamente. Mostramos
+       resumen de archivos cargados por tipo + zona oculta al cargar
+       (collapsed) para que no robe espacio en el viewport. -->
+  <div id="dropzone-wrap" style="margin-bottom:14px">
+    <section class="dropzone" id="dropzone-unified" data-ftype="auto">
       <div class="dz-content">
-        <span class="zone-tag">B.2 · Local</span>
+        <span class="zone-tag" style="background:var(--c-ameris-blue)">Carteras CMF</span>
         <div class="icon" aria-hidden="true">
           <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
         </div>
-        <div class="primary-text">Cuotas FFII y Acciones Nacionales</div>
+        <div class="primary-text">Arrastra una carpeta o archivos CMF</div>
         <div class="help-text">
-          Arrastra archivos B.2 desde la CMF (formato <code>aAAAAMMv.RUTCIA</code>). Contiene la cartera local de cada compañía: acciones de S.A. abiertas y cuotas de fondos de inversión chilenos.
+          Acepta los 7 tipos de archivo: <code>a</code> (B.2 cuotas y acciones), <code>x</code> (B.5 extranjero),
+          <code>c</code> (B.8 composición), <code>i</code> (B.1 renta fija), <code>b</code> (B.4 bienes raíces),
+          <code>o</code> (B.6 otras + alternativos), <code>p</code> (B.7 derivados).
+          <br>Una sola carpeta, varias carpetas a la vez, o la carpeta padre <code>Datos/</code> entera — todo se enruta solo.
         </div>
       </div>
       <div class="dz-actions">
-        <button class="btn" type="button" id="btn-pick-b2">Seleccionar B.2</button>
+        <button class="btn" type="button" id="btn-pick-files">📄 Seleccionar archivos</button>
+        <button class="btn" type="button" id="btn-pick-folder">📁 Seleccionar carpeta</button>
       </div>
-      <input type="file" id="file-input-b2" multiple>
-      <div class="file-list" id="file-list-b2"></div>
-    </section>
-
-    <section class="dropzone dropzone-b5" id="dropzone-b5" data-ftype="b5">
-      <div class="dz-content">
-        <span class="zone-tag">B.5 · Extranjero</span>
-        <div class="icon" aria-hidden="true">
-          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="2" y1="12" x2="22" y2="12"/>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-          </svg>
-        </div>
-        <div class="primary-text">Inversiones en el Extranjero</div>
-        <div class="help-text">
-          Arrastra archivos B.5 desde la CMF (formato <code>xAAAAMMv.RUTCIA</code>). Contiene bonos extranjeros, cuotas de fondos internacionales y acciones de corporaciones extranjeras.
-        </div>
-      </div>
-      <div class="dz-actions">
-        <button class="btn" type="button" id="btn-pick-b5">Seleccionar B.5</button>
-      </div>
-      <input type="file" id="file-input-b5" multiple>
-      <div class="file-list" id="file-list-b5"></div>
+      <input type="file" id="file-input-unified" multiple>
+      <input type="file" id="folder-input-unified" multiple webkitdirectory directory>
+      <div class="file-list" id="file-list-unified"></div>
     </section>
   </div>
   <div id="file-errors-list" class="file-list" style="margin-bottom:10px"></div>
@@ -4890,44 +4872,45 @@ function renderAgfFilter() {
 }
 
 function renderFileList() {
-  const dzB2 = document.getElementById('dropzone-b2');
-  const dzB5 = document.getElementById('dropzone-b5');
-  const listB2 = document.getElementById('file-list-b2');
-  const listB5 = document.getElementById('file-list-b5');
+  const dz = document.getElementById('dropzone-unified');
+  const list = document.getElementById('file-list-unified');
   const errList = document.getElementById('file-errors-list');
 
-  const filesB2 = STATE.files.filter(f => (f.fileType || 'b2') === 'b2');
-  const filesB5 = STATE.files.filter(f => f.fileType === 'b5');
+  // Cuenta por tipo (todos los 7 archivos CMF soportados)
+  const counts = {
+    'B.2': 0, 'B.5': 0, 'B.1': 0, 'B.4': 0, 'B.6': 0, 'B.7': 0, 'B.8': 0,
+  };
+  const tipoLabel = { b2:'B.2', b5:'B.5', b1:'B.1', b4:'B.4', b6:'B.6', b7:'B.7', b8:'B.8' };
+  for (const f of STATE.files) {
+    const t = tipoLabel[f.fileType || 'b2'];
+    if (t) counts[t] = (counts[t] || 0) + 1;
+  }
+  const totalFiles = STATE.files.length;
 
-  // Compact each zone independently — keeps both visible side-by-side after first load.
-  if (dzB2) dzB2.classList.toggle('compact', filesB2.length > 0);
-  if (dzB5) dzB5.classList.toggle('compact', filesB5.length > 0);
+  // Compactar la zona cuando ya hay archivos cargados — no rob a espacio.
+  if (dz) dz.classList.toggle('compact', totalFiles > 0);
 
-  function chipFor(f) {
-    const isB5 = f.fileType === 'b5';
-    const records = isB5 ? (f.b5Records || []) : (f.holdings || []);
-    const hasAmeris = !isB5 && records.some(h => isAmerisRut(h.rutEmisor));
-    const ftLabel = isB5 ? 'B.5' : 'B.2';
-    const classList = ['file-chip'];
-    if (hasAmeris) classList.push('ameris-related');
-    if (isB5) classList.push('b5');
-    const stats = f.parseStats;
-    const auditOk = stats && stats.skipped === 0;
-    if (stats && stats.skipped > 0) classList.push('parse-warning');
-    let auditTxt = '';
-    if (stats) {
-      auditTxt = ` · ${stats.parsed}/${stats.totalDetailLines} parseados`;
-      if (stats.skipped > 0) auditTxt += ` (${stats.skipped} saltados)`;
-      if (stats.utf8Shifted > 0) auditTxt += ` · ${stats.utf8Shifted} con UTF-8 corregido`;
+  // Resumen con chips por tipo + período cubierto
+  if (list) {
+    if (totalFiles === 0) {
+      list.innerHTML = '';
+    } else {
+      const periods = Array.from(new Set(STATE.files.map(f => f.periodo).filter(Boolean))).sort();
+      const periodLabel = periods.length === 0 ? ''
+        : periods.length === 1 ? `Período: <strong>${fmtPeriod(periods[0])}</strong>`
+        : `Períodos: <strong>${fmtPeriod(periods[0])}</strong> → <strong>${fmtPeriod(periods[periods.length-1])}</strong> (${periods.length} meses)`;
+      const chips = Object.entries(counts).map(([k, n]) => {
+        const color = n > 0 ? '#047857' : '#9ca3af';
+        const bg = n > 0 ? '#f0fdf4' : '#f9fafb';
+        return `<span style="display:inline-block;padding:3px 9px;border-radius:12px;background:${bg};color:${color};font-size:11.5px;font-weight:600;margin:0 4px 4px 0">${k}: ${n}</span>`;
+      }).join('');
+      list.innerHTML = `
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:6px">${totalFiles.toLocaleString('es-CL')} archivos cargados · ${periodLabel}</div>
+        <div>${chips}</div>
+      `;
     }
-    const title = `${escapeHtml(f.insurerName)} · ${escapeHtml(fmtPeriod(f.periodo))} · ${ftLabel}${auditTxt}${hasAmeris ? ' · contiene fondos Ameris' : ''}`;
-    return `<span class="${classList.join(' ')}" title="${title}">
-       <span class="file-tag">${ftLabel}</span> ${escapeHtml(f.fileName)}${stats && stats.skipped > 0 ? ' ⚠' : ''}
-     </span>`;
   }
 
-  if (listB2) listB2.innerHTML = filesB2.map(chipFor).join('');
-  if (listB5) listB5.innerHTML = filesB5.map(chipFor).join('');
   if (errList) {
     errList.innerHTML = STATE.errors.map(e =>
       `<span class="file-chip error" title="${escapeHtml(e.error)}">Error · ${escapeHtml(e.name)}</span>`
@@ -8720,29 +8703,12 @@ function renderTopDown() {
 
   // Helper: dropzone embebida que acepta cualquier tipo de archivo CMF.
   // Lo wireamos por delegación al cargar el DOM (clase .topdown-dz).
-  // El botón "Agregar carpeta" es repetible: cada click suma archivos al
-  // STATE sin borrar los anteriores. Permite construir evolución histórica
-  // cargando una carpeta de período por vez (la limitación de webkitdirectory
-  // es que solo permite UNA carpeta por click — pero el flujo se puede
-  // repetir N veces).
-  const hasFiles = STATE.files.length > 0;
-  const folderBtnLabel = hasFiles ? '📁 Agregar otra carpeta' : '📁 Seleccionar carpeta';
-  const filesBtnLabel = hasFiles ? '📄 Agregar más archivos' : '📄 Seleccionar archivos';
+  // La dropzone unificada vive en el header del dashboard (sobre todas las
+  // pestañas). En Top Down ya no rendereamos una embebida duplicada — solo
+  // mostramos un mensaje guía cuando no hay archivos cargados.
   const topdownDz = `
-    <div class="topdown-dz" style="background:linear-gradient(180deg,#f0f9ff 0%,#ffffff 100%);border:2px dashed var(--c-ameris-cyan);border-radius:8px;padding:24px;text-align:center;margin-bottom:16px;transition:all 0.15s">
-      <div style="font-size:32px;margin-bottom:6px">📂</div>
-      <div style="font-size:14px;font-weight:600;color:var(--c-ameris-navy);margin-bottom:6px">Arrastra archivos o carpetas CMF acá</div>
-      <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">
-        <strong>Evolución histórica:</strong> arrastrá la carpeta <code>Datos/</code> entera, o repetí "Agregar otra carpeta" para cargar un período por vez (ej. <code>202601v/</code>, después <code>202602v/</code>, etc.).<br>
-        Acepta cualquier mes: <code>a</code>/<code>b</code>/<code>c</code>/<code>i</code>/<code>o</code>/<code>p</code>/<code>x</code> + <code>AAAAMM</code> + <code>v</code>/<code>g</code> + <code>.RUT</code>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button type="button" class="btn topdown-dz-files-btn" style="font-size:12.5px">${filesBtnLabel}</button>
-        <button type="button" class="btn topdown-dz-folder-btn" style="font-size:12.5px">${folderBtnLabel}</button>
-      </div>
-      ${hasFiles ? `<div style="font-size:11px;color:var(--c-muted);margin-top:8px;font-style:italic">✓ Los archivos previos se mantienen — los nuevos se agregan al historial.</div>` : ''}
-      <input type="file" multiple class="topdown-dz-input" style="display:none">
-      <input type="file" multiple class="topdown-dz-folder-input" style="display:none" webkitdirectory directory>
+    <div style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border:1px solid var(--c-ameris-cyan);border-radius:6px;padding:14px 18px;margin-bottom:14px;font-size:13px;color:var(--c-ameris-navy)">
+      <strong>👆 Carga archivos en la zona de arriba</strong> — arrastrá la carpeta <code>Datos/</code> entera (o varias carpetas de período) y se procesan todos los tipos CMF automáticamente.
     </div>
   `;
 
@@ -8953,7 +8919,6 @@ function renderTopDown() {
       AUM consolidado: <strong style="color:var(--c-ameris-blue)">${fmtMoney(sysTotal)}</strong>
     </div>
 
-    ${topdownFileSummary()}
 
     <div class="card">
       <div class="card-header"><div class="card-title">Nivel 1 · Composición por clase de activo</div></div>
@@ -10361,8 +10326,18 @@ function setupDropzone() {
       }
     });
   }
-  wireZone('dropzone-b2', 'btn-pick-b2', 'file-input-b2', 'b2');
-  wireZone('dropzone-b5', 'btn-pick-b5', 'file-input-b5', 'b5');
+  // Dropzone unificada: detección automática del tipo por filename.
+  wireZone('dropzone-unified', 'btn-pick-files', 'file-input-unified', null);
+  // Botón "📁 Seleccionar carpeta" en la zona unificada
+  const folderBtn = document.getElementById('btn-pick-folder');
+  const folderInput = document.getElementById('folder-input-unified');
+  if (folderBtn && folderInput) {
+    folderBtn.addEventListener('click', (e) => { e.stopPropagation(); folderInput.click(); });
+    folderInput.addEventListener('change', () => {
+      if (folderInput.files.length > 0) ingestFiles(folderInput.files, null);
+      folderInput.value = '';
+    });
+  }
 }
 
 /* =======================================================================
