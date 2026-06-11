@@ -2275,7 +2275,10 @@ function inferFromFilename(filename) {
 }
 
 // Detect file type from filename. Soporta sufijo v (Vida) o g (Generales).
-// a* = B.2, x* = B.5, c* = B.8, i* = B.1, b* = B.4.
+// a* = B.2, x* = B.5, c* = B.8, i* = B.1, b* = B.4, o* = B.6, p* = B.7.
+// Devuelve null si el filename no es CMF y el contenido no calza con ningún
+// formato — para que parseFile() pueda descartar silenciosamente archivos
+// auxiliares (d/e/f/g/t/~) que aparecen en las carpetas CMF junto a los útiles.
 function detectFileType(filename, sampleLine) {
   if (/^a\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b2';
   if (/^x\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b5';
@@ -2284,28 +2287,34 @@ function detectFileType(filename, sampleLine) {
   if (/^b\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b4';
   if (/^o\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b6';
   if (/^p\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b7';
+  // Sin patrón conocido en filename: fallback por largo de línea, SOLO si
+  // el filename podría ser un archivo CMF sin convención (raro pero posible).
   if (sampleLine && sampleLine.length >= 950) return 'b1';
   if (sampleLine && sampleLine.length >= 580 && sampleLine.length < 600) return 'b7';
   if (sampleLine && sampleLine.length >= 600) return 'b5';
   if (sampleLine && sampleLine.length >= 500 && sampleLine.length < 525) return 'b6';
   if (sampleLine && sampleLine.length >= 480 && sampleLine.length < 510) return 'b4';
+  if (sampleLine && sampleLine.length >= 200 && sampleLine.length < 480) return 'b2';
   if (sampleLine && sampleLine.length >= 138 && sampleLine.length < 200) return 'b8';
-  return 'b2';
+  return null;  // no reconocido — caller lo descarta silenciosamente
 }
 
 // Parse a full file's text content. Dispatches to parser por fileType.
+// Retorna null si no se reconoce el formato (filename ni contenido).
 function parseFile(text, filename) {
-  const ft = detectFileType(filename, text.split(/\r?\n/)[0] || '');
+  const lines = text.split(/\r?\n/);
+  const ft = detectFileType(filename, lines[0] || '');
+  if (!ft) return null;
   const minLen = ft === 'b8' ? 50 : 100;
-  const lines = text.split(/\r?\n/).filter(l => l.length >= minLen);
-  if (lines.length === 0) return null;
-  if (ft === 'b5') return parseB5File(lines, filename);
-  if (ft === 'b8') return parseB8File(lines, filename);
-  if (ft === 'b1') return parseB1File(lines, filename);
-  if (ft === 'b4') return parseB4File(lines, filename);
-  if (ft === 'b6') return parseB6File(lines, filename);
-  if (ft === 'b7') return parseB7File(lines, filename);
-  return parseB2File(lines, filename);
+  const validLines = lines.filter(l => l.length >= minLen);
+  if (validLines.length === 0) return null;
+  if (ft === 'b5') return parseB5File(validLines, filename);
+  if (ft === 'b8') return parseB8File(validLines, filename);
+  if (ft === 'b1') return parseB1File(validLines, filename);
+  if (ft === 'b4') return parseB4File(validLines, filename);
+  if (ft === 'b6') return parseB6File(validLines, filename);
+  if (ft === 'b7') return parseB7File(validLines, filename);
+  return parseB2File(validLines, filename);
 }
 
 // Existing B.2 parser (acciones / cuotas FFII nacionales).
@@ -9637,10 +9646,24 @@ function openAgfMoverDetail(rut, allCFI, lastP, prevP) {
    FILE UPLOAD + DROP ZONE
    ======================================================================= */
 
+// Patrón de filename CMF: a/b/c/i/o/p/x + AAAAMM + v/g + .RUT.
+// Las carpetas CMF típicas tienen además archivos d/e/f/g/t/~/etc. que NO
+// son archivos de cartera de inversiones — los filtramos para no inundar
+// el UI con "errores de parseo" de archivos auxiliares.
+const CMF_FILENAME_REGEX = /^[abcixop]\d{6}[vg]\.[0-9Kk]+$/i;
+
+function isCMFCarteraFilename(name) {
+  if (!name) return false;
+  // Strip de prefijo de path (algunas drops mantienen "carpeta/archivo")
+  const base = name.split(/[\\/]/).pop() || name;
+  return CMF_FILENAME_REGEX.test(base);
+}
+
 // Dado un DataTransfer (drag-drop), devuelve la lista plana de File objects.
 // Si el usuario arrastra una carpeta, recorre recursivamente las subcarpetas
 // usando webkitGetAsEntry(). Defensivo: si la API de directorios falla por
 // cualquier motivo, cae al fallback de dataTransfer.files (archivos sueltos).
+// Filtra archivos cuyo filename NO pinta como CMF de cartera (a/b/c/i/o/p/x).
 //
 // IMPORTANTE: dataTransfer.items se invalida después que el drop handler
 // retorna. Capturamos las entries síncronamente al inicio, antes de cualquier
@@ -9667,7 +9690,7 @@ async function extractAllFilesFromDataTransfer(dataTransfer) {
         entries.push(entry);
       } else if (typeof item.getAsFile === 'function') {
         const f = item.getAsFile();
-        if (f) directFiles.push(f);
+        if (f && isCMFCarteraFilename(f.name)) directFiles.push(f);
       }
     }
   } catch (e) {
@@ -9677,7 +9700,9 @@ async function extractAllFilesFromDataTransfer(dataTransfer) {
   // Si no se pudo capturar nada vía items, fallback a dataTransfer.files
   if (entries.length === 0 && directFiles.length === 0) {
     const fl = dataTransfer.files;
-    if (fl) for (let i = 0; i < fl.length; i++) files.push(fl[i]);
+    if (fl) for (let i = 0; i < fl.length; i++) {
+      if (isCMFCarteraFilename(fl[i].name)) files.push(fl[i]);
+    }
     return files;
   }
 
@@ -9688,6 +9713,9 @@ async function extractAllFilesFromDataTransfer(dataTransfer) {
   async function walkEntry(entry, depth) {
     if (!entry || depth > 30) return;
     if (entry.isFile) {
+      // Filtro temprano: descartar filenames que no son CMF de cartera.
+      // Las carpetas Datos/AAAAMMv/ tienen d/e/f/g/t/~ además de los útiles.
+      if (!isCMFCarteraFilename(entry.name)) return;
       await new Promise(resolve => {
         try {
           entry.file(
@@ -9757,8 +9785,16 @@ async function ingestFiles(fileList, expectedType) {
     showSuccessToast(`Procesando ${arr.length} archivos...`);
   }
   let mismatchedCount = 0;
+  let silentlySkipped = 0;
   for (const f of arr) {
     try {
+      // Pre-filtro: archivos cuyo filename no pinta como CMF de cartera se
+      // descartan silenciosamente (no aparecen como "Error"). Las carpetas
+      // CMF contienen auxiliares (d/e/f/g/t/~) que no son carteras.
+      if (!isCMFCarteraFilename(f.name)) {
+        silentlySkipped++;
+        continue;
+      }
       const text = await readFileAsText(f);
       const parsed = parseFile(text, f.name);
       if (!parsed) {
