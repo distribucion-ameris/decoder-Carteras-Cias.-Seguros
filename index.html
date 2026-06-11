@@ -8183,9 +8183,114 @@ function _openCorrectionPrompt(kind, key, current) {
    ======================================================================= */
 
 // Estado de la pestaña Top Down
-let TOPDOWN_OPEN_RUT = '';   // cía con ficha inline abierta (toggle en Nivel 1)
-let TOPDOWN_FULL_RUT = '';   // cía en vista plena (Nivel 2 expandido)
+let TOPDOWN_OPEN_RUT = '';                  // cía con ficha inline abierta
+let TOPDOWN_FULL_RUT = '';                  // cía en vista plena (Nivel 2)
+let TOPDOWN_VIEW_MODE = 'familia';          // 'familia' | 'moneda' | 'pais'
 let _topdownPromedioCache = { key: '', value: null };
+
+// Mapeo de monedas a colores estables para el bar chart "Por moneda"
+const TOPDOWN_MONEDA_COLORS = {
+  CLP:'#1F4E79', UF:'#2E75B6', USD:'#047857', EUR:'#7030A0',
+  GBP:'#BA7517', JPY:'#C00000', CHF:'#156082', CAD:'#5BC0DE',
+  PROM:'#0EA5E9', UTM:'#94A3B8', IVP:'#06B6D4',
+  '$$':'#1F4E79', 'US$':'#047857',
+};
+
+// Colores para países (suficiente cobertura para los más comunes)
+const TOPDOWN_PAIS_COLORS = {
+  CL:'#1F4E79', US:'#047857', EU:'#7030A0', DE:'#BA7517',
+  ES:'#C00000', GB:'#156082', BR:'#5BC0DE', MX:'#0EA5E9',
+  PE:'#06B6D4', CO:'#94A3B8', AR:'#FF7F7F', CA:'#3B6D11',
+  CH:'#534AB7', JP:'#FAC775', IE:'#A9D18E', LU:'#EF9F27',
+};
+
+// Agrega el sistema por MONEDA usando los archivos detalle. Cubre B.1
+// (renta fija con moneda explícita), B.5 (extranjero), B.6 (otras), B.7
+// (derivados, moneda del nocional). B.2 y B.4 se asumen CLP. Si una cía
+// no tiene archivos detalle, no contribuye a la suma — esto da una vista
+// "parcial" que se identifica con el conteo nCubiertas.
+function sysAggregateByMonedaTopDown(b8Snap) {
+  const totals = {};       // { moneda → CLP }
+  let sysAUM = 0;
+  const ciaCubiertas = new Set();
+  const all = activeFiles();
+  const lastForCia = (rut, t) => {
+    const xs = all.filter(f => f.insurerRut === rut && (f.fileType || 'b2') === t);
+    return xs.length ? xs.reduce((a, b) => a.periodo > b.periodo ? a : b) : null;
+  };
+  const addMoney = (mon, clp, rut) => {
+    if (!isFinite(clp)) return;
+    const m = (mon || '').trim() || 'CLP';
+    // Normalizar variantes comunes
+    const norm = (m === '$$' || m === 'PESOS') ? 'CLP' : (m === 'US$' ? 'USD' : m);
+    totals[norm] = (totals[norm] || 0) + clp;
+    sysAUM += clp;
+    if (rut) ciaCubiertas.add(rut);
+  };
+  for (const cia of b8Snap) {
+    const rut = cia.insurerRut;
+    const b1 = lastForCia(rut, 'b1');
+    const b2 = lastForCia(rut, 'b2');
+    const b4 = lastForCia(rut, 'b4');
+    const b5 = lastForCia(rut, 'b5');
+    const b6 = lastForCia(rut, 'b6');
+    const b7 = lastForCia(rut, 'b7');
+    if (b1) for (const r of (b1.b1Records || [])) addMoney(r.moneda, r.valorFinalCLP, rut);
+    if (b2) for (const h of (b2.holdings   || [])) addMoney('CLP', h.valLibro || 0, rut);
+    if (b4) for (const r of (b4.b4Records  || [])) addMoney('CLP', r.valorFinalCLP, rut);
+    if (b5) for (const r of (b5.b5Records  || [])) addMoney(r.moneda, r.valorFinal || 0, rut);
+    if (b6) for (const r of (b6.b6Records  || [])) addMoney(r.moneda, r.valorFinalCLP, rut);
+    if (b7) for (const r of (b7.b7Records  || [])) addMoney(r.moneda || r.monLargo, r.valorFinalCLP, rut);
+  }
+  // Para cías sin detalle, sumamos el AUM B.8 al bucket "Sin clasificar"
+  // (no tenemos cómo determinar moneda) — solo si hay alguna cubierta sino devolvemos null
+  const nCubiertas = ciaCubiertas.size;
+  if (nCubiertas === 0) return null;
+  return { totals, sysAUM, nCubiertas, nTotal: b8Snap.length };
+}
+
+// Agrega el sistema por PAÍS usando B.5 (extranjero con país explícito) y
+// B.7 (derivados contraparte). El resto (B.1/B.2/B.4/B.6/B.8) se asume CL.
+function sysAggregateByPaisTopDown(b8Snap) {
+  const totals = {};
+  let sysAUM = 0;
+  const ciaCubiertas = new Set();
+  const all = activeFiles();
+  const lastForCia = (rut, t) => {
+    const xs = all.filter(f => f.insurerRut === rut && (f.fileType || 'b2') === t);
+    return xs.length ? xs.reduce((a, b) => a.periodo > b.periodo ? a : b) : null;
+  };
+  const add = (pais, clp, rut) => {
+    if (!isFinite(clp) || !clp) return;
+    const p = ((pais || '').trim() || 'CL').toUpperCase();
+    totals[p] = (totals[p] || 0) + clp;
+    sysAUM += clp;
+    if (rut) ciaCubiertas.add(rut);
+  };
+  for (const cia of b8Snap) {
+    const rut = cia.insurerRut;
+    // B.8 nacional (todo lo que no sea extranjero) → CL
+    const cartera = Array.isArray(cia.cartera) ? cia.cartera : [];
+    let nacional = 0;
+    for (const e of cartera) {
+      if (!e) continue;
+      const fam = e.familia || (B8_FAMILIAS && B8_FAMILIAS[e.tipo]) || '';
+      // Solo el nacional. Lo extranjero se cuenta vía B.5/B.7.
+      if (/extran/i.test(fam)) continue;
+      nacional += e.vf || 0;
+    }
+    add('CL', nacional, rut);
+
+    const b5 = lastForCia(rut, 'b5');
+    if (b5) for (const r of (b5.b5Records || [])) add(r.pais || 'XX', r.valorFinal || 0, rut);
+
+    const b7 = lastForCia(rut, 'b7');
+    if (b7) for (const r of (b7.b7Records || [])) add(r.paisContraparte || r.pais || 'CL', r.valorFinalCLP, rut);
+  }
+  const nCubiertas = ciaCubiertas.size;
+  if (nCubiertas === 0) return null;
+  return { totals, sysAUM, nCubiertas, nTotal: b8Snap.length };
+}
 
 // Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
 // B.8 manda como fuente de verdad si está cargado. Si no, se suman los
@@ -8604,18 +8709,101 @@ function renderTopDown() {
   const periodsHere = Array.from(new Set(snapshotFiles.map(f => f.periodo))).sort();
   const lastP = periodsHere[periodsHere.length - 1] || '—';
 
-  const famRows = families.map(fam => {
-    const pct = sysTotal > 0 ? (fam.total / sysTotal * 100) : 0;
-    const color = B8_FAMILIA_COLORS[fam.familia] || '#7F7F7F';
+  // Helpers genéricos para renderear barras por bucket (familia/moneda/país).
+  function _topdownDistRows(rows, colorMap) {
+    return rows.map(r => {
+      const pct = r.totalSys > 0 ? (r.total / r.totalSys * 100) : 0;
+      const color = (colorMap && colorMap[r.key]) || '#7F7F7F';
+      return `
+        <div class="ic-dist-row" style="grid-template-columns:200px 1fr 56px 140px">
+          <span class="ic-dist-name" style="color:${color}">${escapeHtml(r.label || r.key)}</span>
+          <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
+          <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+          <span class="ic-dist-val">${fmtMoney(r.total)}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Por familia (B.8 directo — datos siempre disponibles)
+  const famRows = _topdownDistRows(
+    families.map(f => ({ key: f.familia, label: f.familia, total: f.total, totalSys: sysTotal })),
+    B8_FAMILIA_COLORS
+  );
+
+  // Por moneda (cruza B.1+B.5+B.6+B.7, asume CLP el resto)
+  const monedaAgg = TOPDOWN_VIEW_MODE === 'moneda' ? sysAggregateByMonedaTopDown(snapshotFiles) : null;
+  let monedaRows = '', monedaSubLabel = '';
+  if (monedaAgg) {
+    const sorted = Object.entries(monedaAgg.totals)
+      .map(([k, v]) => ({ key: k, label: k, total: v, totalSys: monedaAgg.sysAUM }))
+      .filter(r => r.total > 0)
+      .sort((a, b) => b.total - a.total);
+    monedaRows = _topdownDistRows(sorted, TOPDOWN_MONEDA_COLORS);
+    monedaSubLabel = `Basado en ${monedaAgg.nCubiertas} de ${monedaAgg.nTotal} compañías con archivos detalle (B.1/B.5/B.6/B.7) cargados.`;
+  }
+
+  // Por país (B.5 + B.7 explícitos, resto CL)
+  const paisAgg = TOPDOWN_VIEW_MODE === 'pais' ? sysAggregateByPaisTopDown(snapshotFiles) : null;
+  let paisRows = '', paisSubLabel = '';
+  if (paisAgg) {
+    const sorted = Object.entries(paisAgg.totals)
+      .map(([k, v]) => ({ key: k, label: k, total: v, totalSys: paisAgg.sysAUM }))
+      .filter(r => r.total > 0)
+      .sort((a, b) => b.total - a.total);
+    paisRows = _topdownDistRows(sorted, TOPDOWN_PAIS_COLORS);
+    paisSubLabel = `Basado en ${paisAgg.nCubiertas} de ${paisAgg.nTotal} compañías. La porción nacional (CL) viene del B.8 consolidado.`;
+  }
+
+  // Toggle de modo de composición
+  function _modeBtn(mode, label) {
+    const isActive = TOPDOWN_VIEW_MODE === mode;
+    const bg = isActive ? 'var(--c-ameris-blue)' : 'white';
+    const color = isActive ? 'white' : 'var(--c-ameris-navy)';
+    const border = isActive ? 'var(--c-ameris-blue)' : 'var(--c-border)';
+    return `<button type="button" class="topdown-mode-btn" data-mode="${mode}" style="background:${bg};color:${color};border:1px solid ${border};font-size:12px;font-weight:600;padding:6px 14px;border-radius:4px;cursor:pointer;transition:all 0.15s">${escapeHtml(label)}</button>`;
+  }
+  const modeToggle = `
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      ${_modeBtn('familia', 'Por familia')}
+      ${_modeBtn('moneda', 'Por moneda')}
+      ${_modeBtn('pais', 'Por país')}
+    </div>
+  `;
+
+  // Bloque de composición según modo activo
+  const composicionBody = (() => {
+    if (TOPDOWN_VIEW_MODE === 'moneda') {
+      if (!monedaAgg) {
+        return `<div style="background:#fff7ed;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;font-size:12.5px;color:#92400e">
+          Carga archivos detalle (B.1/B.5/B.6/B.7) de al menos una cía. para ver la composición por moneda.
+        </div>`;
+      }
+      return `
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">${monedaSubLabel}</div>
+        <div class="ic-dist-list">${monedaRows}</div>
+      `;
+    }
+    if (TOPDOWN_VIEW_MODE === 'pais') {
+      if (!paisAgg) {
+        return `<div style="background:#fff7ed;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:4px;font-size:12.5px;color:#92400e">
+          Sin archivos detalle suficientes para vista por país.
+        </div>`;
+      }
+      return `
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">${paisSubLabel}</div>
+        <div class="ic-dist-list">${paisRows}</div>
+      `;
+    }
+    // familia (default)
     return `
-      <div class="ic-dist-row" style="grid-template-columns:200px 1fr 56px 140px">
-        <span class="ic-dist-name" style="color:${color}">${escapeHtml(fam.familia)}</span>
-        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
-        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
-        <span class="ic-dist-val">${fmtMoney(fam.total)}</span>
+      <div style="font-size:12.5px;color:var(--c-muted);margin-bottom:12px">
+        Suma de <code>VALOR_FINAL</code> de los archivos B.8 de cada aseguradora, agrupado en las 12 familias
+        regulatorias CMF. Cada barra muestra el peso de esa clase de activo en la cartera total del sistema.
       </div>
+      <div class="ic-dist-list">${famRows}</div>
     `;
-  }).join('');
+  })();
 
   const top10Rows = insurerRanking.slice(0, 10).map((c, i) => {
     const pct = sysTotal > 0 ? (c.total / sysTotal * 100) : 0;
@@ -8651,13 +8839,10 @@ function renderTopDown() {
     ${topdownFileSummary()}
 
     <div class="card">
-      <div class="card-header"><div class="card-title">Nivel 1 · Composición por clase de activo</div></div>
+      <div class="card-header"><div class="card-title">Nivel 1 · Composición del sistema</div></div>
       <div style="padding:16px 22px">
-        <div style="font-size:12.5px;color:var(--c-muted);margin-bottom:12px">
-          Suma de <code>VALOR_FINAL</code> de los archivos B.8 de cada aseguradora, agrupado en las 12 familias
-          regulatorias CMF. Cada barra muestra el peso de esa clase de activo en la cartera total del sistema.
-        </div>
-        <div class="ic-dist-list">${famRows}</div>
+        ${modeToggle}
+        ${composicionBody}
       </div>
     </div>
 
@@ -8698,6 +8883,14 @@ function renderTopDown() {
         TOPDOWN_OPEN_RUT = '';
         renderTopDown();
         window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+    // Toggle de modo de composición (familia / moneda / país)
+    container.querySelectorAll('.topdown-mode-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        TOPDOWN_VIEW_MODE = btn.dataset.mode || 'familia';
+        renderTopDown();
       });
     });
     _wireTopDownDropzone(container);
