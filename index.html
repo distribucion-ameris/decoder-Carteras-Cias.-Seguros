@@ -8187,7 +8187,194 @@ function _openCorrectionPrompt(kind, key, current) {
 // Estado de la pestaña Top Down
 let TOPDOWN_OPEN_RUT = '';                  // cía con ficha inline abierta
 let TOPDOWN_FULL_RUT = '';                  // cía en vista plena (Nivel 2)
+let TOPDOWN_N3_RUT = '';                    // cía cuyo Nivel 3 estamos viendo
+let TOPDOWN_N3_CLASE = '';                  // 'b1' | 'b4' | 'b6' | 'b7' | 'b2' | 'b5'
 let _topdownPromedioCache = { key: '', value: null };
+
+// Despacho del Nivel 3 por clase de archivo. Cada clase tiene su propio
+// componente con KPIs y tablas específicas. Por ahora B.1 (renta fija)
+// está implementada; las demás caen a un placeholder hasta su bloque.
+function renderTopDownN3(rut, clase) {
+  const cia = (function () {
+    const all = activeFiles().filter(f => f.insurerRut === rut);
+    return all.length ? all[0] : null;
+  })();
+  if (!cia) {
+    return `<div style="padding:24px;color:var(--c-muted)">Compañía no encontrada.</div>`;
+  }
+  const ciaName = cia.insurerName || `(RUT ${fmtRut(rut)})`;
+
+  if (clase === 'b1') return renderTopDownN3_RentaFija(rut, ciaName);
+
+  // Placeholder para clases futuras
+  const claseLabels = {
+    b2: 'CFI nacional + Acciones', b4: 'Bienes raíces',
+    b5: 'Extranjero', b6: 'Otras + Alternativos', b7: 'Derivados',
+  };
+  return `
+    <div style="padding:24px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px">
+      <h3 style="margin:0 0 8px;color:#92400e">🚧 Nivel 3 · ${escapeHtml(claseLabels[clase] || clase)} — en construcción</h3>
+      <div style="font-size:13px;color:#78350f">
+        El drill-down para esta clase de activo viene en el próximo bloque.
+        Por ahora podés volver a la ficha de la cía. para ver el agregado y otras clases.
+      </div>
+    </div>
+  `;
+}
+
+// Nivel 3 · Renta Fija (B.1). Toma el último B.1 cargado de la cía. y muestra
+// KPIs + distribución por tipo de instrumento + por moneda + top 15 emisores
+// + tabla de instrumentos individuales (filtrable más adelante).
+function renderTopDownN3_RentaFija(rut, ciaName) {
+  const all = activeFiles().filter(f => f.insurerRut === rut && f.fileType === 'b1');
+  if (all.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">Sin archivo B.1 cargado para ${escapeHtml(ciaName)}.</div>`;
+  }
+  const lastB1 = all.reduce((a, b) => a.periodo > b.periodo ? a : b);
+  const records = Array.isArray(lastB1.b1Records) ? lastB1.b1Records : [];
+  if (records.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">El B.1 cargado no tiene registros.</div>`;
+  }
+
+  // KPIs principales
+  const totalCLP = records.reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const nacionalRecords = records.filter(r => r.familia !== 'Renta fija extran.');
+  const extranRecords   = records.filter(r => r.familia === 'Renta fija extran.');
+  const totalNacional = nacionalRecords.reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const totalExtran   = extranRecords.reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const pctNacional = totalCLP > 0 ? (totalNacional / totalCLP * 100) : 0;
+  const pctExtran   = totalCLP > 0 ? (totalExtran   / totalCLP * 100) : 0;
+
+  // Por tipo de instrumento
+  const byTipo = new Map();
+  for (const r of records) {
+    const t = r.tipoInstrumento || '—';
+    const cur = byTipo.get(t) || { tipo: t, desc: r.tipoInstrumentoDesc || t, total: 0, n: 0 };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byTipo.set(t, cur);
+  }
+  const tiposSorted = Array.from(byTipo.values()).sort((a, b) => b.total - a.total);
+
+  // Por moneda (normalizada: $$/PESOS → CLP, US$ → USD)
+  const normMon = m => {
+    const t = (m || '').trim() || '—';
+    if (t === '$$' || t === 'PESOS') return 'CLP';
+    if (t === 'US$') return 'USD';
+    return t;
+  };
+  const byMoneda = new Map();
+  for (const r of records) {
+    const m = normMon(r.moneda);
+    byMoneda.set(m, (byMoneda.get(m) || 0) + (r.valorFinalCLP || 0));
+  }
+  const monedasSorted = Array.from(byMoneda.entries())
+    .map(([m, v]) => ({ moneda: m, total: v }))
+    .filter(x => x.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  // Top emisores (por RUT emisor)
+  const byEmisor = new Map();
+  for (const r of records) {
+    const k = r.rutEmisor || '—';
+    const cur = byEmisor.get(k) || { rut: k, total: 0, n: 0, tipos: new Set() };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    if (r.tipoInstrumento) cur.tipos.add(r.tipoInstrumento);
+    byEmisor.set(k, cur);
+  }
+  const topEmisores = Array.from(byEmisor.values())
+    .filter(e => e.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
+
+  // Función auxiliar para una fila de distribución
+  const distRow = (label, val, total, sublabel) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:240px 1fr 60px 130px">
+        <span class="ic-dist-name" style="color:var(--c-ameris-navy)">${escapeHtml(label)}${sublabel ? `<div style="font-size:10.5px;color:var(--c-muted);font-weight:400">${escapeHtml(sublabel)}</div>` : ''}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:var(--c-ameris-blue)"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(val)}</span>
+      </div>
+    `;
+  };
+
+  const tipoRows = tiposSorted.map(t => distRow(`${t.tipo} · ${t.desc}`, t.total, totalCLP, `${t.n} instrumentos`)).join('');
+  const monedaRows = monedasSorted.map(m => distRow(m.moneda, m.total, totalCLP, '')).join('');
+  const emisorRows = topEmisores.map((e, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td>
+        <strong>${escapeHtml(fmtRut(e.rut))}</strong>
+        <div style="color:var(--c-muted);font-size:11px">${e.n} instrumento${e.n !== 1 ? 's' : ''} · ${e.tipos.size} tipo${e.tipos.size !== 1 ? 's' : ''}</div>
+      </td>
+      <td class="num">${fmtMoney(e.total)}</td>
+      <td class="num">${totalCLP > 0 ? (e.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div style="margin-bottom:14px">
+      <button class="btn btn-action" id="topdown-n3-back" style="font-size:12.5px;padding:7px 14px">← Volver a ${escapeHtml(ciaName)}</button>
+    </div>
+
+    <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
+      <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · Renta Fija</strong>
+      · Cierre ${fmtPeriod(lastB1.periodo)} · Archivo B.1 con ${records.length.toLocaleString('es-CL')} instrumentos
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0">
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">AUM Renta Fija</div>
+        <div style="font-size:20px;font-weight:700;color:var(--c-ameris-blue)">${fmtMoney(totalCLP)}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">N° Instrumentos</div>
+        <div style="font-size:20px;font-weight:700">${records.length.toLocaleString('es-CL')}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">% Nacional</div>
+        <div style="font-size:20px;font-weight:700">${pctNacional.toFixed(1)}%</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${fmtMoney(totalNacional)}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">% Extranjero</div>
+        <div style="font-size:20px;font-weight:700">${pctExtran.toFixed(1)}%</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${fmtMoney(totalExtran)}</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="gap:14px">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por tipo de instrumento</div></div>
+        <div style="padding:14px 18px">
+          <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">Códigos CMF: bonos estado (BCU/BTU), banco central, bancarios (BB), empresas (BE), depósitos a plazo (DPF), letras hipotecarias (LH), etc.</div>
+          <div class="ic-dist-list">${tipoRows}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por moneda</div></div>
+        <div style="padding:14px 18px">
+          <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">Moneda original del instrumento (valor en CLP al TC de cierre del archivo). UF y CLP típicamente dominan en aseguradoras de vida con calce a rentas vitalicias.</div>
+          <div class="ic-dist-list">${monedaRows}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 emisores por exposición</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Emisor (RUT)</th><th class="num">Exposición</th><th class="num">% RF total</th></tr></thead>
+          <tbody>${emisorRows}</tbody>
+        </table>
+      </div>
+      ${byEmisor.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byEmisor.size} emisores únicos.</div>` : ''}
+    </div>
+  `;
+}
 
 // Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
 // B.8 manda como fuente de verdad si está cargado. Si no, se suman los
@@ -8382,10 +8569,16 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
     }
   })();
 
+  // Mapeo Tipo (B.1/B.2/...) → clase (b1/b2/...) para el state del Nivel 3
+  const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
   const archivoRows = cart.archivos.map(a => {
     const icon = a.presente ? '<span style="color:#047857;font-size:14px">✓</span>' : '<span style="color:#9ca3af;font-size:14px">🚧</span>';
-    const btn = a.presente
-      ? `<button class="btn btn-action" disabled style="opacity:0.5;font-size:11px;padding:4px 8px" title="Nivel 3 — próximamente">Ver detalle ▸</button>`
+    const clase = tipoToClase[a.tipo];
+    // B.1 ya está implementado; el resto sigue como placeholder
+    const enabled = a.presente && clase;
+    const isReady = a.presente && clase === 'b1';
+    const btn = enabled
+      ? `<button class="btn btn-action topdown-n3-go" data-rut="${escapeHtml(rut)}" data-clase="${clase}" style="font-size:11px;padding:4px 8px;${isReady ? '' : 'opacity:0.7'}" title="${isReady ? 'Ver detalle Nivel 3' : 'Próximamente'}">Ver detalle ▸</button>`
       : '<span style="color:#9ca3af;font-size:11px;font-style:italic">no cargado</span>';
     return `
       <div style="display:grid;grid-template-columns:30px 60px 1fr 130px 90px 130px;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--c-border);font-size:12px">
@@ -8602,6 +8795,23 @@ function renderTopDown() {
     .filter(c => c.total > 0)
     .sort((a, b) => b.total - a.total);
 
+  // === MODO NIVEL 3 (drill-down por clase de activo) ===
+  if (TOPDOWN_N3_RUT && TOPDOWN_N3_CLASE) {
+    container.innerHTML = renderTopDownN3(TOPDOWN_N3_RUT, TOPDOWN_N3_CLASE);
+    setTimeout(() => {
+      const back = document.getElementById('topdown-n3-back');
+      if (back) back.addEventListener('click', () => {
+        // Volver a la vista plena Nivel 2 de esa cía
+        TOPDOWN_FULL_RUT = TOPDOWN_N3_RUT;
+        TOPDOWN_N3_RUT = '';
+        TOPDOWN_N3_CLASE = '';
+        renderTopDown();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }, 0);
+    return;
+  }
+
   // === MODO VISTA PLENA (Nivel 2 expandido) ===
   if (TOPDOWN_FULL_RUT && insurerRanking.find(c => c.rut === TOPDOWN_FULL_RUT)) {
     const rankFull = insurerRanking.findIndex(c => c.rut === TOPDOWN_FULL_RUT) + 1;
@@ -8695,8 +8905,9 @@ function renderTopDown() {
 
     <div class="card" style="margin-top:14px;background:#fff7ed;border-left:4px solid #f59e0b">
       <div style="padding:14px 18px;font-size:13px">
-        <strong>🚧 Niveles 3 y 4 en construcción.</strong> El drill-down por clase de activo (renta fija → bonos individuales,
-        bienes raíces → inmuebles, derivados → forwards/swaps, etc.) viene en el próximo bloque.
+        <strong>🚧 Nivel 3 en construcción progresiva.</strong>
+        Listo: <strong>Renta Fija (B.1)</strong> — click en "Ver detalle" en la ficha de una cía. para drill-down.
+        Próximo: Bienes raíces (B.4), Otras + Alternativos (B.6), Derivados (B.7), CFI nacional (B.2), Extranjero (B.5).
       </div>
     </div>
   `;
@@ -8716,6 +8927,18 @@ function renderTopDown() {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         TOPDOWN_FULL_RUT = btn.dataset.topdownExpand;
+        TOPDOWN_OPEN_RUT = '';
+        renderTopDown();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+    // Botones "Ver detalle" → entrar al Nivel 3
+    container.querySelectorAll('.topdown-n3-go').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        TOPDOWN_N3_RUT = btn.dataset.rut;
+        TOPDOWN_N3_CLASE = btn.dataset.clase;
+        TOPDOWN_FULL_RUT = '';
         TOPDOWN_OPEN_RUT = '';
         renderTopDown();
         window.scrollTo({ top: 0, behavior: 'smooth' });
