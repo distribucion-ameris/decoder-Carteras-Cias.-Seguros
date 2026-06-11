@@ -4188,11 +4188,14 @@ function activeFiles(ignoreFilters = false) {
 
 function activeFilesB2(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => (f.fileType || 'b2') === 'b2'); }
 function activeFilesB5(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b5'); }
-function activeFilesB8(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b8'); }
-function activeFilesB1(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b1'); }
-function activeFilesB4(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b4'); }
-function activeFilesB6(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b6'); }
-function activeFilesB7(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b7'); }
+// Para los archivos nuevos, exigimos que su array de registros sea iterable.
+// Esto evita explosiones por archivos viejos de IndexedDB que tienen fileType
+// correcto pero perdieron la propiedad de datos (parser anterior, corrupción).
+function activeFilesB8(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b8' && Array.isArray(f.cartera)); }
+function activeFilesB1(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b1' && Array.isArray(f.b1Records)); }
+function activeFilesB4(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b4' && Array.isArray(f.b4Records)); }
+function activeFilesB6(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b6' && Array.isArray(f.b6Records)); }
+function activeFilesB7(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b7' && Array.isArray(f.b7Records)); }
 
 // Vista unificada del dashboard: cuotas de fondos de inversión (CFI), tanto
 // nacionales (B.2) como administradas por AGFs chilenas con activos en el
@@ -8539,22 +8542,26 @@ function renderTopDown() {
   }
   const snapshotFiles = b8Files.filter(f => lastPerIns.get(f.insurerRut) === f.periodo);
 
-  // Agregar por familia (sistema completo)
+  // Agregar por familia (sistema completo). Guardas defensivas: archivos B.8
+  // antiguos en IndexedDB pueden no tener .cartera (parser viejo) y archivos
+  // con la propiedad pero sin familia caen a 'Otros'.
   const familyMap = new Map();
   for (const fam of B8_FAMILIA_ORDER) {
     familyMap.set(fam, { familia: fam, total: 0, insurers: new Set(), tipos: new Set() });
   }
   let sysTotal = 0;
   for (const f of snapshotFiles) {
-    for (const e of f.cartera) {
-      const fam = e.familia || 'Otros';
+    const cartera = Array.isArray(f.cartera) ? f.cartera : [];
+    for (const e of cartera) {
+      if (!e) continue;
+      const fam = e.familia || (B8_FAMILIAS && B8_FAMILIAS[e.tipo]) || 'Otros';
       let slot = familyMap.get(fam);
       if (!slot) {
         slot = { familia: fam, total: 0, insurers: new Set(), tipos: new Set() };
         familyMap.set(fam, slot);
       }
       slot.total += e.vf || 0;
-      slot.tipos.add(e.tipo);
+      if (e.tipo) slot.tipos.add(e.tipo);
       if (f.insurerRut) slot.insurers.add(f.insurerRut);
       sysTotal += e.vf || 0;
     }
@@ -8566,7 +8573,8 @@ function renderTopDown() {
   // Ranking de aseguradoras por AUM B.8
   const insurerMap = new Map();
   for (const f of snapshotFiles) {
-    const t = f.cartera.reduce((s, e) => s + (e.vf || 0), 0);
+    const cartera = Array.isArray(f.cartera) ? f.cartera : [];
+    const t = cartera.reduce((s, e) => s + ((e && e.vf) || 0), 0);
     insurerMap.set(f.insurerRut, { rut: f.insurerRut, name: f.insurerName, total: t, periodo: f.periodo });
   }
   const insurerRanking = Array.from(insurerMap.values())
