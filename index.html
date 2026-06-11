@@ -8202,6 +8202,50 @@ function _topdownScrollToTop() {
   }, 0);
 }
 
+// Breadcrumbs reutilizable para Nivel 2/3. Recibe un array de pasos:
+// [{ label, action?, rut?, active? }]. Los no-active son clickeables.
+// action: 'system' vuelve a Nivel 1, 'cia' vuelve a Nivel 2 de esa cía.
+function _topdownBreadcrumbs(steps) {
+  const sep = '<span style="color:#cbd5e1;margin:0 8px;font-size:14px">›</span>';
+  const parts = steps.map(s => {
+    if (s.active) {
+      return `<span style="color:var(--c-ameris-navy);font-weight:700">${escapeHtml(s.label)}</span>`;
+    }
+    const dataAttrs = `data-bc-action="${s.action || ''}"${s.rut ? ` data-bc-rut="${escapeHtml(s.rut)}"` : ''}`;
+    return `<a href="#" class="topdown-bc-link" ${dataAttrs} style="color:var(--c-ameris-blue);text-decoration:none;cursor:pointer;font-weight:500">${escapeHtml(s.label)}</a>`;
+  });
+  return `
+    <div style="display:flex;align-items:center;padding:10px 4px;font-size:13px;margin-bottom:8px;flex-wrap:wrap;gap:0">
+      ${parts.join(sep)}
+    </div>
+  `;
+}
+
+function _wireTopDownBreadcrumbs(container) {
+  container.querySelectorAll('.topdown-bc-link').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const action = a.dataset.bcAction;
+      const rut = a.dataset.bcRut;
+      if (action === 'system') {
+        TOPDOWN_FULL_RUT = '';
+        TOPDOWN_N3_RUT = '';
+        TOPDOWN_N3_CLASE = '';
+        TOPDOWN_OPEN_RUT = '';
+      } else if (action === 'cia' && rut) {
+        TOPDOWN_FULL_RUT = rut;
+        TOPDOWN_N3_RUT = '';
+        TOPDOWN_N3_CLASE = '';
+      }
+      renderTopDown();
+      _topdownScrollToTop();
+    });
+    a.addEventListener('mouseenter', () => { a.style.textDecoration = 'underline'; });
+    a.addEventListener('mouseleave', () => { a.style.textDecoration = 'none'; });
+  });
+}
+
 // Despacho del Nivel 3 por clase de archivo. Cada clase tiene su propio
 // componente con KPIs y tablas específicas. Por ahora B.1 (renta fija)
 // está implementada; las demás caen a un placeholder hasta su bloque.
@@ -8327,10 +8371,6 @@ function renderTopDownN3_RentaFija(rut, ciaName) {
   `).join('');
 
   return `
-    <div style="margin-bottom:14px">
-      <button class="btn btn-action" id="topdown-n3-back" style="font-size:12.5px;padding:7px 14px">← Volver a ${escapeHtml(ciaName)}</button>
-    </div>
-
     <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
       <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · Renta Fija</strong>
       · Cierre ${fmtPeriod(lastB1.periodo)} · Archivo B.1 con ${records.length.toLocaleString('es-CL')} instrumentos
@@ -8580,25 +8620,41 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
     }
   })();
 
-  // Mapeo Tipo (B.1/B.2/...) → clase (b1/b2/...) para el state del Nivel 3
+  // Mapeo Tipo (B.1/B.2/...) → clase (b1/b2/...) para el state del Nivel 3.
+  // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
+  // construcción — mostramos un indicador visual claro de ambos estados.
   const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
+  const CLASES_LISTAS = new Set(['b1']);  // ampliar cuando se sumen B.4/B.7/etc.
   const archivoRows = cart.archivos.map(a => {
-    const icon = a.presente ? '<span style="color:#047857;font-size:14px">✓</span>' : '<span style="color:#9ca3af;font-size:14px">🚧</span>';
     const clase = tipoToClase[a.tipo];
-    // B.1 ya está implementado; el resto sigue como placeholder
-    const enabled = a.presente && clase;
-    const isReady = a.presente && clase === 'b1';
-    const btn = enabled
-      ? `<button class="btn btn-action topdown-n3-go" data-rut="${escapeHtml(rut)}" data-clase="${clase}" style="font-size:11px;padding:4px 8px;${isReady ? '' : 'opacity:0.7'}" title="${isReady ? 'Ver detalle Nivel 3' : 'Próximamente'}">Ver detalle ▸</button>`
-      : '<span style="color:#9ca3af;font-size:11px;font-style:italic">no cargado</span>';
+    const isReady = a.presente && clase && CLASES_LISTAS.has(clase);
+    // Color de fondo: verde-claro para ready, gris muy claro para resto
+    let bgColor = '';
+    let cursor = 'default';
+    let extraAttrs = '';
+    if (isReady) {
+      bgColor = '#f0fdfa';  // muy sutil tinte cyan/verde
+      cursor = 'pointer';
+      extraAttrs = `class="topdown-n3-row" data-rut="${escapeHtml(rut)}" data-clase="${clase}" title="Click para explorar Nivel 3 · ${escapeHtml(a.desc)}"`;
+    }
+    const icon = !a.presente
+      ? '<span style="color:#9ca3af;font-size:14px" title="Archivo no cargado">🚧</span>'
+      : isReady
+        ? '<span style="color:#047857;font-size:14px" title="Drill-down disponible">▸</span>'
+        : '<span style="color:#047857;font-size:14px" title="Cargado">✓</span>';
+    const action = !a.presente
+      ? '<span style="color:#9ca3af;font-size:11px;font-style:italic">no cargado</span>'
+      : isReady
+        ? '<span style="color:var(--c-ameris-blue);font-size:11.5px;font-weight:600">Explorar →</span>'
+        : '<span style="color:#9ca3af;font-size:11px;font-style:italic">próximamente</span>';
     return `
-      <div style="display:grid;grid-template-columns:30px 60px 1fr 130px 90px 130px;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--c-border);font-size:12px">
+      <div ${extraAttrs} style="display:grid;grid-template-columns:30px 60px 1fr 130px 90px 130px;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--c-border);font-size:12px;cursor:${cursor};background:${bgColor};border-radius:3px;transition:background 0.12s">
         ${icon}
         <span style="font-weight:600">${a.tipo}</span>
         <span style="color:var(--c-muted)">${escapeHtml(a.desc)}</span>
         <span class="num">${a.presente ? a.n.toLocaleString('es-CL') + ' reg.' : '—'}</span>
         <span class="num">${a.presente && a.periodo ? fmtPeriod(a.periodo) : ''}</span>
-        ${btn}
+        ${action}
       </div>
     `;
   }).join('');
@@ -8808,17 +8864,25 @@ function renderTopDown() {
 
   // === MODO NIVEL 3 (drill-down por clase de activo) ===
   if (TOPDOWN_N3_RUT && TOPDOWN_N3_CLASE) {
-    container.innerHTML = renderTopDownN3(TOPDOWN_N3_RUT, TOPDOWN_N3_CLASE);
+    const ciaN3 = (function () {
+      const ff = activeFiles().filter(f => f.insurerRut === TOPDOWN_N3_RUT);
+      return ff.length ? ff[0] : null;
+    })();
+    const ciaN3Name = (ciaN3 && ciaN3.insurerName) || `(RUT ${fmtRut(TOPDOWN_N3_RUT)})`;
+    const claseLabels = {
+      b1:'Renta Fija', b2:'CFI nacional + Acciones', b4:'Bienes raíces',
+      b5:'Extranjero', b6:'Otras + Alternativos', b7:'Derivados',
+    };
+    container.innerHTML = `
+      ${_topdownBreadcrumbs([
+        { label: 'Sistema', action: 'system' },
+        { label: ciaN3Name, action: 'cia', rut: TOPDOWN_N3_RUT },
+        { label: claseLabels[TOPDOWN_N3_CLASE] || TOPDOWN_N3_CLASE, active: true },
+      ])}
+      ${renderTopDownN3(TOPDOWN_N3_RUT, TOPDOWN_N3_CLASE)}
+    `;
     setTimeout(() => {
-      const back = document.getElementById('topdown-n3-back');
-      if (back) back.addEventListener('click', () => {
-        // Volver a la vista plena Nivel 2 de esa cía
-        TOPDOWN_FULL_RUT = TOPDOWN_N3_RUT;
-        TOPDOWN_N3_RUT = '';
-        TOPDOWN_N3_CLASE = '';
-        renderTopDown();
-        _topdownScrollToTop();
-      });
+      _wireTopDownBreadcrumbs(container);
     }, 0);
     return;
   }
@@ -8826,18 +8890,17 @@ function renderTopDown() {
   // === MODO VISTA PLENA (Nivel 2 expandido) ===
   if (TOPDOWN_FULL_RUT && insurerRanking.find(c => c.rut === TOPDOWN_FULL_RUT)) {
     const rankFull = insurerRanking.findIndex(c => c.rut === TOPDOWN_FULL_RUT) + 1;
+    const ciaInFull = insurerRanking.find(c => c.rut === TOPDOWN_FULL_RUT);
+    const ciaName = (ciaInFull && ciaInFull.name) || `(RUT ${fmtRut(TOPDOWN_FULL_RUT)})`;
     container.innerHTML = `
-      <div style="margin-bottom:12px">
-        <button class="btn btn-action" id="topdown-back-btn" style="font-size:12.5px;padding:7px 14px">← Volver al sistema</button>
-      </div>
+      ${_topdownBreadcrumbs([
+        { label: 'Sistema', action: 'system' },
+        { label: ciaName, active: true },
+      ])}
       ${renderTopDownCiaCard(TOPDOWN_FULL_RUT, rankFull, sysTotal, { isFull: true })}
     `;
     setTimeout(() => {
-      const back = document.getElementById('topdown-back-btn');
-      if (back) back.addEventListener('click', () => {
-        TOPDOWN_FULL_RUT = '';
-        renderTopDown();
-      });
+      _wireTopDownBreadcrumbs(container);
     }, 0);
     return;
   }
@@ -8943,17 +9006,20 @@ function renderTopDown() {
         _topdownScrollToTop();
       });
     });
-    // Botones "Ver detalle" → entrar al Nivel 3
-    container.querySelectorAll('.topdown-n3-go').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+    // Filas clickeables "Explorar Nivel 3" — toda la fila se comporta como
+    // botón para que sea más obvio (hover + cursor pointer + área amplia).
+    container.querySelectorAll('.topdown-n3-row').forEach(row => {
+      row.addEventListener('click', (e) => {
         e.stopPropagation();
-        TOPDOWN_N3_RUT = btn.dataset.rut;
-        TOPDOWN_N3_CLASE = btn.dataset.clase;
+        TOPDOWN_N3_RUT = row.dataset.rut;
+        TOPDOWN_N3_CLASE = row.dataset.clase;
         TOPDOWN_FULL_RUT = '';
         TOPDOWN_OPEN_RUT = '';
         renderTopDown();
         _topdownScrollToTop();
       });
+      row.addEventListener('mouseenter', () => { row.style.background = '#dcfce7'; });
+      row.addEventListener('mouseleave', () => { row.style.background = '#f0fdfa'; });
     });
     _wireTopDownDropzone(container);
   }, 0);
