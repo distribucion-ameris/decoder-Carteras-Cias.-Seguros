@@ -1943,10 +1943,6 @@
       </div>
     </div>
     <div class="right">
-      <button class="btn" type="button" id="btn-add-files" title="Cargar archivos sueltos al historial (los anteriores se mantienen)">+ Archivos</button>
-      <input type="file" id="btn-add-files-input" multiple style="display:none">
-      <button class="btn" type="button" id="btn-add-folder" title="Cargar una carpeta entera. Repetí este botón para ir agregando varios períodos uno por uno y construir evolución histórica.">+ Carpeta</button>
-      <input type="file" id="btn-add-folder-input" multiple style="display:none" webkitdirectory directory>
       <span class="ab-divider"></span>
       <button class="btn btn-secondary" type="button" id="btn-quality" title="Auditoría de los datos cargados: nemos sin nombre, AGFs no mapeadas, posibles truncamientos y conflictos">Calidad de datos<span id="quality-badge" style="display:none;margin-left:6px;padding:1px 7px;border-radius:9px;background:#0891b2;color:white;font-size:10.5px;font-weight:700;line-height:14px;vertical-align:1px"></span></button>
       <button class="btn btn-secondary" type="button" id="btn-export-historico" title="Descarga un JSON con todos los archivos cargados. Subilo al repo como Dashboard/historico-compartido.json y todos los usuarios lo recibirán automáticamente al recargar.">Exportar histórico</button>
@@ -8712,36 +8708,10 @@ function renderTopDown() {
     </div>
   `;
 
-  // Helper: contador resumen de archivos cargados por tipo, con CTAs para
-  // agregar archivos sueltos o una carpeta más (evolución histórica).
-  function topdownFileSummary() {
-    const counts = {
-      'B.1': activeFilesB1().length, 'B.2': activeFilesB2().length,
-      'B.4': activeFilesB4().length, 'B.5': activeFilesB5().length,
-      'B.6': activeFilesB6().length, 'B.7': activeFilesB7().length,
-      'B.8': activeFilesB8().length,
-    };
-    const items = Object.entries(counts).map(([k, n]) => {
-      const color = n > 0 ? '#047857' : '#9ca3af';
-      const bg = n > 0 ? '#f0fdf4' : '#f9fafb';
-      return `<span style="display:inline-block;padding:3px 9px;border-radius:12px;background:${bg};color:${color};font-size:11.5px;font-weight:600;margin-right:4px">${k}: ${n}</span>`;
-    }).join('');
-    // Período más antiguo y más reciente representados, para evidenciar el
-    // rango histórico que está cubriendo.
-    const periods = activePeriods();
-    const rangoLabel = periods.length >= 2
-      ? `<span style="font-size:11px;color:var(--c-muted);margin-left:8px">Rango: <strong>${fmtPeriod(periods[0])}</strong> → <strong>${fmtPeriod(periods[periods.length-1])}</strong> · ${periods.length} períodos</span>`
-      : '';
-    return `
-      <div style="background:white;border:1px solid var(--c-border);border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <div style="font-size:12px"><strong style="color:var(--c-ameris-navy)">Archivos cargados:</strong> ${items}${rangoLabel}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-action topdown-add-files" style="font-size:12px;padding:6px 12px">+ Archivos</button>
-          <button class="btn btn-action topdown-add-folder" style="font-size:12px;padding:6px 12px">+ Carpeta</button>
-        </div>
-      </div>
-    `;
-  }
+  // topdownFileSummary fue eliminado — el resumen ahora vive en la dropzone
+  // unificada del header. Si en el futuro hay que reintroducir un resumen
+  // específico del Top Down con CTAs, recuperar de git history (commit
+  // c050cd8 / da81fb5).
 
   if (STATE.files.length === 0) {
     container.innerHTML = `
@@ -8768,7 +8738,6 @@ function renderTopDown() {
       <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
         <strong style="color:var(--c-ameris-navy)">Top Down · Sistema asegurador chileno</strong>
       </div>
-      ${topdownFileSummary()}
       ${topdownDz}
       <div class="card" style="margin-top:14px;background:#fff7ed;border-left:4px solid #f59e0b">
         <div style="padding:14px 18px;font-size:13px">
@@ -9046,40 +9015,9 @@ function _wireTopDownDropzone(container) {
       }
     });
   });
-  // Botón "+ Archivos" en el summary → reusar input global de la actions-bar
-  container.querySelectorAll('.topdown-add-files').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const globalInput = document.getElementById('btn-add-files-input');
-      if (globalInput) globalInput.click();
-    });
-  });
-  // Botón "+ Carpeta" en el summary → reusar el input webkitdirectory de la
-  // dropzone embebida. Si no existe (porque ya no se renderiza el empty state)
-  // creamos uno on-the-fly y lo despachamos.
-  container.querySelectorAll('.topdown-add-folder').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const existing = container.querySelector('.topdown-dz-folder-input');
-      if (existing) {
-        existing.click();
-        return;
-      }
-      // Fallback: crear un input on-the-fly que dispara ingestFiles directamente
-      const onTheFly = document.createElement('input');
-      onTheFly.type = 'file';
-      onTheFly.multiple = true;
-      onTheFly.setAttribute('webkitdirectory', '');
-      onTheFly.setAttribute('directory', '');
-      onTheFly.style.display = 'none';
-      document.body.appendChild(onTheFly);
-      onTheFly.addEventListener('change', () => {
-        if (onTheFly.files.length > 0) ingestFiles(onTheFly.files);
-        onTheFly.remove();
-      });
-      onTheFly.click();
-    });
-  });
+  // Los CTAs '+ Archivos' / '+ Carpeta' del summary del Top Down fueron
+  // eliminados — la carga ahora es exclusiva de la dropzone unificada del
+  // header.
 }
 
 /* =======================================================================
@@ -10301,7 +10239,13 @@ function setupDropzone() {
       e.stopPropagation();
       fi.click();
     });
-    dz.addEventListener('click', () => fi.click());
+    // Click en el dropzone (zona vacía) abre el file picker — pero NO si el
+    // click viene de un botón o input child (eso permitiría disparar el input
+    // de archivos cuando el usuario clickea 'Seleccionar carpeta').
+    dz.addEventListener('click', (e) => {
+      if (e.target.closest('button') || e.target.closest('input')) return;
+      fi.click();
+    });
     fi.addEventListener('change', () => {
       if (fi.files.length > 0) ingestFiles(fi.files, expectedType);
       fi.value = '';
@@ -10328,13 +10272,25 @@ function setupDropzone() {
   }
   // Dropzone unificada: detección automática del tipo por filename.
   wireZone('dropzone-unified', 'btn-pick-files', 'file-input-unified', null);
-  // Botón "📁 Seleccionar carpeta" en la zona unificada
+  // Botón "📁 Seleccionar carpeta" en la zona unificada.
+  // Forzamos webkitdirectory/directory por setAttribute para asegurar que el
+  // navegador abra el selector de CARPETAS y no el de archivos (algunos
+  // navegadores no respetan el atributo si solo está declarado en HTML).
   const folderBtn = document.getElementById('btn-pick-folder');
   const folderInput = document.getElementById('folder-input-unified');
   if (folderBtn && folderInput) {
-    folderBtn.addEventListener('click', (e) => { e.stopPropagation(); folderInput.click(); });
+    folderInput.setAttribute('webkitdirectory', '');
+    folderInput.setAttribute('directory', '');
+    folderInput.setAttribute('mozdirectory', '');
+    folderBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      folderInput.click();
+    });
     folderInput.addEventListener('change', () => {
-      if (folderInput.files.length > 0) ingestFiles(folderInput.files, null);
+      if (folderInput.files && folderInput.files.length > 0) {
+        ingestFiles(folderInput.files, null);
+      }
       folderInput.value = '';
     });
   }
@@ -10536,33 +10492,9 @@ function setupControls() {
     STATE.agfFilter = e.target.value;
     renderAll();
   });
-  // Botones "+ Archivos" / "+ Carpeta" en la action-bar: forma rápida de
-  // seguir agregando archivos al historial desde cualquier vista. Los archivos
-  // cargados antes se mantienen (persistencia IndexedDB). "+ Carpeta" es
-  // repetible: cada click agrega los archivos de una nueva carpeta, lo que
-  // permite construir evolución histórica un período por vez.
-  const btnAddFiles = document.getElementById('btn-add-files');
-  const btnAddFilesInput = document.getElementById('btn-add-files-input');
-  if (btnAddFiles && btnAddFilesInput) {
-    btnAddFiles.addEventListener('click', () => btnAddFilesInput.click());
-    btnAddFilesInput.addEventListener('change', () => {
-      if (btnAddFilesInput.files && btnAddFilesInput.files.length > 0) {
-        ingestFiles(btnAddFilesInput.files, null);
-        btnAddFilesInput.value = '';
-      }
-    });
-  }
-  const btnAddFolder = document.getElementById('btn-add-folder');
-  const btnAddFolderInput = document.getElementById('btn-add-folder-input');
-  if (btnAddFolder && btnAddFolderInput) {
-    btnAddFolder.addEventListener('click', () => btnAddFolderInput.click());
-    btnAddFolderInput.addEventListener('change', () => {
-      if (btnAddFolderInput.files && btnAddFolderInput.files.length > 0) {
-        ingestFiles(btnAddFolderInput.files, null);
-        btnAddFolderInput.value = '';
-      }
-    });
-  }
+  // Los botones globales "+ Archivos" y "+ Carpeta" de la action-bar fueron
+  // eliminados — ahora la carga vive en la dropzone unificada del header.
+  // Mantengo este comentario como recordatorio en caso de revertir.
 
   // Botón "Exportar histórico para compartir": descarga un JSON con todos
   // los archivos cargados (locales + shared). El admin lo sube al repo
