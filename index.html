@@ -9646,11 +9646,12 @@ function openAgfMoverDetail(rut, allCFI, lastP, prevP) {
    FILE UPLOAD + DROP ZONE
    ======================================================================= */
 
-// Patrón de filename CMF: a/b/c/i/o/p/x + AAAAMM + v/g + .RUT.
-// Las carpetas CMF típicas tienen además archivos d/e/f/g/t/~/etc. que NO
-// son archivos de cartera de inversiones — los filtramos para no inundar
-// el UI con "errores de parseo" de archivos auxiliares.
-const CMF_FILENAME_REGEX = /^[abcixop]\d{6}[vg]\.[0-9Kk]+$/i;
+// Patrón de filename CMF: a/b/c/i/o/p/x + AAAAMM + v/g + .RUT (+ opcional
+// sufijo .txt/.bak/etc.). Las carpetas CMF típicas tienen además archivos
+// d/e/f/g/t/~/etc. auxiliares — los filtramos para no inundar el UI con
+// errores de parseo.
+// Permisivo: no exige $ al final del RUT para tolerar sufijos opcionales.
+const CMF_FILENAME_REGEX = /^[abcixop]\d{6}[vg]\.[0-9Kk]+/i;
 
 function isCMFCarteraFilename(name) {
   if (!name) return false;
@@ -9786,19 +9787,27 @@ async function ingestFiles(fileList, expectedType) {
   }
   let mismatchedCount = 0;
   let silentlySkipped = 0;
+  // Pre-filtro SOLO si vienen muchos archivos (probablemente una carpeta).
+  // Para selecciones chicas y explícitas (≤5 archivos), procesamos todo —
+  // el usuario eligió cada uno a propósito y un mensaje "Formato no reconocido"
+  // es más útil que silencio.
+  const useFilter = arr.length > 5;
   for (const f of arr) {
     try {
-      // Pre-filtro: archivos cuyo filename no pinta como CMF de cartera se
-      // descartan silenciosamente (no aparecen como "Error"). Las carpetas
-      // CMF contienen auxiliares (d/e/f/g/t/~) que no son carteras.
-      if (!isCMFCarteraFilename(f.name)) {
+      if (useFilter && !isCMFCarteraFilename(f.name)) {
         silentlySkipped++;
         continue;
       }
       const text = await readFileAsText(f);
       const parsed = parseFile(text, f.name);
       if (!parsed) {
-        STATE.errors.push({ name: f.name, error: 'Formato no reconocido' });
+        // Si pasó el filtro pero el parser no reconoció, agregar a errors
+        // SOLO si el filename pinta a CMF (sino skip silencioso).
+        if (isCMFCarteraFilename(f.name)) {
+          STATE.errors.push({ name: f.name, error: 'Formato no reconocido' });
+        } else {
+          silentlySkipped++;
+        }
         continue;
       }
       // Conteo de registros — cada tipo de archivo guarda en su propio campo.
@@ -9835,6 +9844,13 @@ async function ingestFiles(fileList, expectedType) {
       `${mismatchedCount} archivo(s) eran de tipo ${otherType} y se cargaron en la zona ${expectedType.toUpperCase()}.\n\n` +
       `Los archivos se procesaron correctamente — la detección automática los enrutó al parser correcto. Para evitar este aviso, arrastra los archivos a su zona correspondiente.`
     ), 80);
+  }
+  // Diagnóstico de carga para consola: ayuda a entender por qué falta lo
+  // que el usuario esperaba ver.
+  const processed = arr.length - silentlySkipped;
+  console.info(`ingestFiles: ${arr.length} archivos recibidos · ${processed} procesados · ${silentlySkipped} descartados por filtro (no-CMF) · ${STATE.errors.length} errores totales`);
+  if (arr.length > 0 && processed === 0) {
+    showSuccessToast(`Ninguno de los ${arr.length} archivos era CMF de cartera (a/b/c/i/o/p/x + AAAAMM + v/g + .RUT). Revisá los nombres.`);
   }
   saveState();
   renderAll();
