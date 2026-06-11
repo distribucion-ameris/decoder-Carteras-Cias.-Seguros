@@ -8447,16 +8447,19 @@ function renderTopDown() {
   // Helper: dropzone embebida que acepta cualquier tipo de archivo CMF.
   // Lo wireamos por delegación al cargar el DOM (clase .topdown-dz).
   const topdownDz = `
-    <div class="topdown-dz" style="background:linear-gradient(180deg,#f0f9ff 0%,#ffffff 100%);border:2px dashed var(--c-ameris-cyan);border-radius:8px;padding:24px;text-align:center;margin-bottom:16px;cursor:pointer;transition:all 0.15s">
+    <div class="topdown-dz" style="background:linear-gradient(180deg,#f0f9ff 0%,#ffffff 100%);border:2px dashed var(--c-ameris-cyan);border-radius:8px;padding:24px;text-align:center;margin-bottom:16px;transition:all 0.15s">
       <div style="font-size:32px;margin-bottom:6px">📂</div>
-      <div style="font-size:14px;font-weight:600;color:var(--c-ameris-navy);margin-bottom:4px">Arrastra archivos CMF acá (o click para buscar)</div>
-      <div style="font-size:12px;color:var(--c-muted)">
-        Acepta: <code>aAAAAMMv.RUT</code> (B.2) · <code>bAAAAMMv.RUT</code> (B.4) ·
-        <code>cAAAAMMv.RUT</code> (B.8) · <code>iAAAAMMv.RUT</code> (B.1) ·
-        <code>oAAAAMMv.RUT</code> (B.6) · <code>pAAAAMMv.RUT</code> (B.7) ·
-        <code>xAAAAMMv.RUT</code> (B.5)
+      <div style="font-size:14px;font-weight:600;color:var(--c-ameris-navy);margin-bottom:6px">Arrastra archivos o carpetas CMF acá</div>
+      <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">
+        Carpetas: el dashboard recorre recursivamente y carga todos los archivos válidos.
+        Acepta cualquier mes: <code>a</code>/<code>b</code>/<code>c</code>/<code>i</code>/<code>o</code>/<code>p</code>/<code>x</code> + <code>AAAAMM</code> + <code>v</code>/<code>g</code> + <code>.RUT</code>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button type="button" class="btn topdown-dz-files-btn" style="font-size:12.5px">📄 Seleccionar archivos</button>
+        <button type="button" class="btn topdown-dz-folder-btn" style="font-size:12.5px">📁 Seleccionar carpeta</button>
       </div>
       <input type="file" multiple class="topdown-dz-input" style="display:none">
+      <input type="file" multiple class="topdown-dz-folder-input" style="display:none" webkitdirectory directory>
     </div>
   `;
 
@@ -8685,19 +8688,33 @@ function renderTopDown() {
 }
 
 // Helper: conecta drop-zones y botones "+ Cargar más archivos" dentro de la
-// pestaña Top Down. Acepta cualquier tipo de archivo CMF — parseFile() decide.
+// pestaña Top Down. Acepta archivos sueltos o carpetas (drop o input file con
+// webkitdirectory). parseFile() decide el tipo por filename.
 function _wireTopDownDropzone(container) {
   container.querySelectorAll('.topdown-dz').forEach(dz => {
-    const input = dz.querySelector('.topdown-dz-input');
-    if (!input) return;
-    dz.addEventListener('click', (e) => {
-      if (e.target.tagName === 'INPUT') return;
-      input.click();
-    });
-    input.addEventListener('change', () => {
-      if (input.files.length > 0) ingestFiles(input.files);
-      input.value = '';
-    });
+    const fileInput = dz.querySelector('.topdown-dz-input');
+    const folderInput = dz.querySelector('.topdown-dz-folder-input');
+    const filesBtn = dz.querySelector('.topdown-dz-files-btn');
+    const folderBtn = dz.querySelector('.topdown-dz-folder-btn');
+
+    // Botón "📄 Seleccionar archivos"
+    if (filesBtn && fileInput) {
+      filesBtn.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) ingestFiles(fileInput.files);
+        fileInput.value = '';
+      });
+    }
+    // Botón "📁 Seleccionar carpeta"
+    if (folderBtn && folderInput) {
+      folderBtn.addEventListener('click', (e) => { e.stopPropagation(); folderInput.click(); });
+      folderInput.addEventListener('change', () => {
+        if (folderInput.files.length > 0) ingestFiles(folderInput.files);
+        folderInput.value = '';
+      });
+    }
+
+    // Drag-and-drop con soporte de carpetas anidadas (DataTransferItem.webkitGetAsEntry)
     ['dragenter', 'dragover'].forEach(ev =>
       dz.addEventListener(ev, e => {
         e.preventDefault();
@@ -8710,9 +8727,11 @@ function _wireTopDownDropzone(container) {
         dz.style.background = '';
         dz.style.borderColor = '';
       }));
-    dz.addEventListener('drop', (e) => {
-      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-        ingestFiles(e.dataTransfer.files);
+    dz.addEventListener('drop', async (e) => {
+      const files = await extractAllFilesFromDataTransfer(e.dataTransfer);
+      if (files.length > 0) {
+        if (files.length >= 20) showSuccessToast(`Procesando ${files.length} archivos…`);
+        ingestFiles(files);
       }
     });
   });
@@ -8720,7 +8739,7 @@ function _wireTopDownDropzone(container) {
   container.querySelectorAll('.topdown-add-files').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      // Reusar el input file del botón global de la actions-bar
+      // Reusar el input file global de la actions-bar
       const globalInput = document.getElementById('btn-add-files-input');
       if (globalInput) globalInput.click();
     });
@@ -9610,6 +9629,54 @@ function openAgfMoverDetail(rut, allCFI, lastP, prevP) {
    FILE UPLOAD + DROP ZONE
    ======================================================================= */
 
+// Dado un DataTransfer (drag-drop) o un FileList (input file), devuelve la
+// lista plana de File objects. Si el usuario arrastra/elige una carpeta,
+// recorre recursivamente sus subcarpetas usando webkitGetAsEntry().
+// Filtra a archivos cuyo filename pinta como CMF (a/b/c/i/o/p/x + AAAAMM).
+async function extractAllFilesFromDataTransfer(dataTransfer) {
+  const files = [];
+  const items = dataTransfer && dataTransfer.items;
+  if (!items || items.length === 0) {
+    // Fallback: tomar files directos
+    if (dataTransfer && dataTransfer.files) {
+      for (const f of dataTransfer.files) files.push(f);
+    }
+    return files;
+  }
+
+  // Convertir cada item a entry y recorrer recursivamente
+  const entries = [];
+  for (const item of items) {
+    if (item.kind !== 'file') continue;
+    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+    if (entry) entries.push(entry);
+    else if (item.getAsFile) {
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+
+  async function walkEntry(entry) {
+    if (entry.isFile) {
+      await new Promise(resolve => {
+        entry.file(f => { files.push(f); resolve(); }, () => resolve());
+      });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      // readEntries() devuelve batches; hay que llamarlo hasta que retorne array vacío
+      let batch;
+      do {
+        batch = await new Promise(resolve =>
+          reader.readEntries(es => resolve(es), () => resolve([])));
+        for (const sub of batch) await walkEntry(sub);
+      } while (batch && batch.length > 0);
+    }
+  }
+
+  for (const e of entries) await walkEntry(e);
+  return files;
+}
+
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -9780,9 +9847,12 @@ function setupDropzone() {
       dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dragover'); }));
     ['dragleave', 'drop'].forEach(ev =>
       dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('dragover'); }));
-    dz.addEventListener('drop', (e) => {
-      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-        ingestFiles(e.dataTransfer.files, expectedType);
+    // Drop con soporte recursivo de carpetas (drag de una carpeta entera).
+    dz.addEventListener('drop', async (e) => {
+      const files = await extractAllFilesFromDataTransfer(e.dataTransfer);
+      if (files.length > 0) {
+        if (files.length >= 20) showSuccessToast(`Procesando ${files.length} archivos…`);
+        ingestFiles(files, expectedType);
       }
     });
   }
