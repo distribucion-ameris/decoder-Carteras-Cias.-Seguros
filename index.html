@@ -4017,6 +4017,8 @@ async function _idbSaveAll(files) {
     store.clear();  // reemplaza todo el contenido
     for (const f of files) {
       const id = `${f.insurerRut || 'unknown'}__${f.periodo || '000000'}__${f.fileType || 'b2'}`;
+      // Cada tipo de archivo guarda sus registros en su propio campo.
+      // Persistimos TODOS para que al recargar no queden vacíos.
       const slim = {
         id,
         fileType: f.fileType || 'b2',
@@ -4024,11 +4026,23 @@ async function _idbSaveAll(files) {
         insurerRut: f.insurerRut,
         insurerName: f.insurerName,
         periodo: f.periodo,
+        // B.2 — holdings (cuotas FFII + acciones nacionales)
         holdings: f.holdings,
-        // B.5 records: guardar slim form (mucho más chico, se rehydra al cargar)
+        // B.5 — records slimmed (cabe más en IDB; se rehidrata al cargar)
         b5Records: f.b5Records ? f.b5Records.map(slimB5Record) : undefined,
         b5BienesRaicesCount: f.b5BienesRaicesCount,
         b5FilialesCount: f.b5FilialesCount,
+        // B.1 — instrumentos de renta fija
+        b1Records: f.b1Records,
+        // B.4 — bienes raíces
+        b4Records: f.b4Records,
+        // B.6 — otras inversiones + alternativos NCG 152
+        b6Records: f.b6Records,
+        // B.7 — derivados (forwards/swaps/pactos)
+        b7Records: f.b7Records,
+        // B.8 — composición consolidada
+        cartera: f.cartera,
+        parseStats: f.parseStats,
       };
       store.put(slim);
     }
@@ -4082,6 +4096,11 @@ function saveState() {
           b5Records: f.b5Records ? f.b5Records.map(slimB5Record) : undefined,
           b5BienesRaicesCount: f.b5BienesRaicesCount,
           b5FilialesCount: f.b5FilialesCount,
+          b1Records: f.b1Records,
+          b4Records: f.b4Records,
+          b6Records: f.b6Records,
+          b7Records: f.b7Records,
+          cartera: f.cartera,
         }));
         localStorage.setItem(STORAGE_KEY, JSON.stringify(minimal));
       } catch (e2) {
