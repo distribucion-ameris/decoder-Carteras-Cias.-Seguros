@@ -8438,17 +8438,81 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
 
 function renderTopDown() {
   const container = document.getElementById('topdown-content');
+  const b8Files = activeFilesB8();
+
+  // Helper: dropzone embebida que acepta cualquier tipo de archivo CMF.
+  // Lo wireamos por delegación al cargar el DOM (clase .topdown-dz).
+  const topdownDz = `
+    <div class="topdown-dz" style="background:linear-gradient(180deg,#f0f9ff 0%,#ffffff 100%);border:2px dashed var(--c-ameris-cyan);border-radius:8px;padding:24px;text-align:center;margin-bottom:16px;cursor:pointer;transition:all 0.15s">
+      <div style="font-size:32px;margin-bottom:6px">📂</div>
+      <div style="font-size:14px;font-weight:600;color:var(--c-ameris-navy);margin-bottom:4px">Arrastra archivos CMF acá (o click para buscar)</div>
+      <div style="font-size:12px;color:var(--c-muted)">
+        Acepta: <code>aAAAAMMv.RUT</code> (B.2) · <code>bAAAAMMv.RUT</code> (B.4) ·
+        <code>cAAAAMMv.RUT</code> (B.8) · <code>iAAAAMMv.RUT</code> (B.1) ·
+        <code>oAAAAMMv.RUT</code> (B.6) · <code>pAAAAMMv.RUT</code> (B.7) ·
+        <code>xAAAAMMv.RUT</code> (B.5)
+      </div>
+      <input type="file" multiple class="topdown-dz-input" style="display:none">
+    </div>
+  `;
+
+  // Helper: contador resumen de archivos cargados por tipo, con CTA "Cargar más".
+  function topdownFileSummary() {
+    const counts = {
+      'B.1': activeFilesB1().length, 'B.2': activeFilesB2().length,
+      'B.4': activeFilesB4().length, 'B.5': activeFilesB5().length,
+      'B.6': activeFilesB6().length, 'B.7': activeFilesB7().length,
+      'B.8': activeFilesB8().length,
+    };
+    const items = Object.entries(counts).map(([k, n]) => {
+      const color = n > 0 ? '#047857' : '#9ca3af';
+      const bg = n > 0 ? '#f0fdf4' : '#f9fafb';
+      return `<span style="display:inline-block;padding:3px 9px;border-radius:12px;background:${bg};color:${color};font-size:11.5px;font-weight:600;margin-right:4px">${k}: ${n}</span>`;
+    }).join('');
+    return `
+      <div style="background:white;border:1px solid var(--c-border);border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div style="font-size:12px"><strong style="color:var(--c-ameris-navy)">Archivos cargados:</strong> ${items}</div>
+        <button class="btn btn-action topdown-add-files" style="font-size:12px;padding:6px 12px">+ Cargar más archivos</button>
+      </div>
+    `;
+  }
+
   if (STATE.files.length === 0) {
-    container.innerHTML = emptyState(
-      'Carga archivos B.8 (formato <code>cAAAAMMv.RUT</code>) desde la CMF para ver la cartera consolidada del sistema asegurador.'
-    );
+    container.innerHTML = `
+      <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
+        <strong style="color:var(--c-ameris-navy)">Top Down · Sistema asegurador chileno</strong> ·
+        Análisis de la cartera consolidada de todas las CSV chilenas.
+      </div>
+      ${topdownDz}
+      <div class="card" style="margin-top:14px">
+        <div class="card-header"><div class="card-title">¿Cómo empezar?</div></div>
+        <div style="padding:16px 22px;font-size:13px;line-height:1.7">
+          Carga al menos un archivo <strong>B.8 (composición de cartera)</strong> para ver el agregado del sistema (Nivel 1) y poder explorar la ficha de cada compañía (Nivel 2). Los archivos B.8 vienen como <code>cAAAAMMv.RUT</code> desde el portal CMF y son la tabla maestra de la cartera de cada cía.
+          <br><br>
+          Para drill-down al detalle de cada clase de activo (Nivel 3), también carga: B.1 (renta fija), B.2 (CFI nacional), B.4 (bienes raíces), B.5 (extranjero), B.6 (otras+alternativos), B.7 (derivados).
+        </div>
+      </div>
+    `;
+    _wireTopDownDropzone(container);
     return;
   }
-  const b8Files = activeFilesB8();
+
   if (b8Files.length === 0) {
-    container.innerHTML = emptyState(
-      'No hay archivos B.8 cargados en el período seleccionado. Los B.8 son los archivos de composición de cartera (filename <code>cAAAAMMv.RUT</code>) que cada compañía sube a la CMF mensualmente.'
-    );
+    container.innerHTML = `
+      <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
+        <strong style="color:var(--c-ameris-navy)">Top Down · Sistema asegurador chileno</strong>
+      </div>
+      ${topdownFileSummary()}
+      ${topdownDz}
+      <div class="card" style="margin-top:14px;background:#fff7ed;border-left:4px solid #f59e0b">
+        <div style="padding:14px 18px;font-size:13px">
+          <strong>Sin archivos B.8 cargados en este filtro.</strong>
+          Los B.8 (composición consolidada, filename <code>cAAAAMMv.RUT</code>) son la base del Nivel 1 del Top Down.
+          Cargá uno o más arrastrándolos a la zona azul arriba.
+        </div>
+      </div>
+    `;
+    _wireTopDownDropzone(container);
     return;
   }
 
@@ -8560,6 +8624,8 @@ function renderTopDown() {
       AUM consolidado: <strong style="color:var(--c-ameris-blue)">${fmtMoney(sysTotal)}</strong>
     </div>
 
+    ${topdownFileSummary()}
+
     <div class="card">
       <div class="card-header"><div class="card-title">Nivel 1 · Composición por clase de activo</div></div>
       <div style="padding:16px 22px">
@@ -8610,7 +8676,51 @@ function renderTopDown() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
     });
+    _wireTopDownDropzone(container);
   }, 0);
+}
+
+// Helper: conecta drop-zones y botones "+ Cargar más archivos" dentro de la
+// pestaña Top Down. Acepta cualquier tipo de archivo CMF — parseFile() decide.
+function _wireTopDownDropzone(container) {
+  container.querySelectorAll('.topdown-dz').forEach(dz => {
+    const input = dz.querySelector('.topdown-dz-input');
+    if (!input) return;
+    dz.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      input.click();
+    });
+    input.addEventListener('change', () => {
+      if (input.files.length > 0) ingestFiles(input.files);
+      input.value = '';
+    });
+    ['dragenter', 'dragover'].forEach(ev =>
+      dz.addEventListener(ev, e => {
+        e.preventDefault();
+        dz.style.background = 'linear-gradient(180deg,#dbeafe 0%,#ffffff 100%)';
+        dz.style.borderColor = 'var(--c-ameris-blue)';
+      }));
+    ['dragleave', 'drop'].forEach(ev =>
+      dz.addEventListener(ev, e => {
+        e.preventDefault();
+        dz.style.background = '';
+        dz.style.borderColor = '';
+      }));
+    dz.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+        ingestFiles(e.dataTransfer.files);
+      }
+    });
+  });
+  // Botón "+ Cargar más archivos" en el summary
+  container.querySelectorAll('.topdown-add-files').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Reusar el input file del botón global de la actions-bar
+      const globalInput = document.getElementById('btn-add-files-input');
+      if (globalInput) globalInput.click();
+    });
+  });
 }
 
 /* =======================================================================
@@ -9539,9 +9649,15 @@ async function ingestFiles(fileList, expectedType) {
         STATE.errors.push({ name: f.name, error: 'Formato no reconocido' });
         continue;
       }
-      const recordCount = (parsed.fileType === 'b5')
-        ? (parsed.b5Records || []).length
-        : (parsed.holdings || []).length;
+      // Conteo de registros — cada tipo de archivo guarda en su propio campo.
+      const recordCount =
+        (parsed.holdings   || []).length +
+        (parsed.b5Records  || []).length +
+        (parsed.b1Records  || []).length +
+        (parsed.b4Records  || []).length +
+        (parsed.b6Records  || []).length +
+        (parsed.b7Records  || []).length +
+        (parsed.cartera    || []).length;
       if (recordCount === 0 && (!parsed.insurerName || parsed.insurerName === '')) {
         STATE.errors.push({ name: f.name, error: 'Archivo sin registros válidos' });
         continue;
