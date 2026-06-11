@@ -2259,7 +2259,7 @@ function categorize(rec) {
 // Filename pattern: aYYYYMMv.RUT_DIGITS  (B.2 acciones/cuotas)
 //                   xYYYYMMv.RUT_DIGITS  (B.5 inversiones extranjero)
 function inferFromFilename(filename) {
-  const m = filename.match(/^[axci](\d{6})[vg]\.([0-9Kk]+)/i);
+  const m = filename.match(/^[axcib](\d{6})[vg]\.([0-9Kk]+)/i);
   if (!m) return null;
   const periodo = m[1];
   const rutDigits = m[2];
@@ -2271,14 +2271,16 @@ function inferFromFilename(filename) {
 }
 
 // Detect file type from filename. Soporta sufijo v (Vida) o g (Generales).
-// a* = B.2, x* = B.5, c* = B.8, i* = B.1. Fallback por largo de línea.
+// a* = B.2, x* = B.5, c* = B.8, i* = B.1, b* = B.4.
 function detectFileType(filename, sampleLine) {
   if (/^a\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b2';
   if (/^x\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b5';
   if (/^c\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b8';
   if (/^i\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b1';
-  if (sampleLine && sampleLine.length >= 950) return 'b1';   // 970 chars
-  if (sampleLine && sampleLine.length >= 600) return 'b5';   // 611 chars
+  if (/^b\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b4';
+  if (sampleLine && sampleLine.length >= 950) return 'b1';
+  if (sampleLine && sampleLine.length >= 600) return 'b5';
+  if (sampleLine && sampleLine.length >= 480 && sampleLine.length < 550) return 'b4';
   if (sampleLine && sampleLine.length >= 138 && sampleLine.length < 200) return 'b8';
   return 'b2';
 }
@@ -2292,6 +2294,7 @@ function parseFile(text, filename) {
   if (ft === 'b5') return parseB5File(lines, filename);
   if (ft === 'b8') return parseB8File(lines, filename);
   if (ft === 'b1') return parseB1File(lines, filename);
+  if (ft === 'b4') return parseB4File(lines, filename);
   return parseB2File(lines, filename);
 }
 
@@ -2979,6 +2982,164 @@ function parseB1File(lines, filename) {
 }
 
 /* =======================================================================
+   PARSER for B.4 (Bienes Raíces) fixed-width records.
+   File naming: bAAAAMMv.<RUT_CIA>  (e.g., b202603v.96812960)
+   Líneas de 506 caracteres en UTF-8. Tipo 1 = header, Tipo 2 = detalle por
+   inmueble, Tipo 3 = trailer. Source: Circular CMF N° 1.835 + decoder_b4.py.
+   ======================================================================= */
+
+const B4_COD_USO = {
+  A:'Arriendo (renta)', P:'Propio (operación aseguradora)',
+  M:'Mixto', L:'Leasing', C:'Construcción', S:'Sin uso',
+  D:'Disponible / Desocupado', O:'Otros',
+};
+const B4_COD_TIPO_INM = { UR:'Urbano', NU:'No urbano' };
+const B4_COD_DESTINO = { HA:'Habitacional', NH:'No habitacional' };
+
+// Tabla de comunas (subset CMF SEIL). Para drill-down geográfico futuro.
+const B4_COD_COMUNAS = {
+  '81 ':'Santiago','82 ':'Independencia','83 ':'Conchalí','84 ':'Huechuraba',
+  '85 ':'Recoleta','86 ':'Providencia','87 ':'Vitacura','88 ':'Lo Barnechea',
+  '89 ':'Las Condes','90 ':'Ñuñoa','91 ':'La Reina','92 ':'Macul',
+  '93 ':'Peñalolén','94 ':'La Florida','95 ':'San Joaquín','96 ':'La Granja',
+  '97 ':'La Pintana','98 ':'San Ramón','99 ':'San Miguel','100':'La Cisterna',
+  '101':'El Bosque','102':'Pedro Aguirre Cerda','103':'Lo Espejo',
+  '104':'Estación Central','105':'Cerrillos','106':'Maipú','107':'Quinta Normal',
+  '108':'Lo Prado','109':'Pudahuel','110':'Cerro Navia','111':'Renca',
+  '112':'Quilicura','334':'Puente Alto',
+};
+
+// Etiquetas de la flag DESCRIPCION_INMUEBLE (12 chars S/N).
+const B4_DESC_LABELS = ['Local','Oficina','Bodega','Estacionamiento','Terreno',
+  'Casa','Edificio','Piso completo','Piso incompleto','Departamento',
+  'Obra en construcción','Otros'];
+
+function _b4Int(s) {
+  if (!s) return 0;
+  const t = s.trim();
+  if (!t) return 0;
+  const n = parseInt(t, 10);
+  return isFinite(n) ? n : 0;
+}
+function _b4Decimal(s, intDigits, decDigits) {
+  if (!s) return 0;
+  const t = s.trim();
+  if (!t) return 0;
+  const padded = t.padStart(intDigits + decDigits, '0');
+  const n = parseFloat(padded.substring(0, intDigits) + '.' + padded.substring(intDigits));
+  return isFinite(n) ? n : 0;
+}
+function _b4Date(s) {
+  if (!s) return '';
+  const t = s.trim();
+  if (!t || t === '00000000' || t.length !== 8 || t === '19000101') return '';
+  const y = parseInt(t.substring(0, 4), 10);
+  const m = parseInt(t.substring(4, 6), 10);
+  const d = parseInt(t.substring(6, 8), 10);
+  if (!isFinite(y) || y < 1900 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+function parseB4Detail(line) {
+  const sub = (i, len) => line.substring(i, i + len);
+  const descRaw = sub(12, 12);
+  const descTypes = B4_DESC_LABELS.filter((_, i) => i < descRaw.length && descRaw[i] === 'S');
+  const comunaCod = sub(188, 3);
+  return {
+    rolSII: sub(1, 11).trim(),
+    descTypesRaw: descRaw,
+    descTypes: descTypes,
+    tipoInmueble: sub(27, 2).trim(),       // UR/NU
+    destino: sub(29, 2).trim(),             // HA/NH
+    uso: sub(31, 1),                        // A/P/M/L/C/S/D/O
+    porcentajeUsoPropio: _b4Decimal(sub(32, 5), 3, 2),
+    tipoInstrumento: sub(37, 10).trim(),
+    nemo: sub(47, 30).trim(),
+    arrendatario: sub(77, 60).trim(),
+    relacionado: sub(137, 2).trim(),
+    saldoPlazoArriendo: _b4Int(sub(139, 3)),
+    montoArriendoUF: _b4Decimal(sub(142, 6), 4, 2),
+    ubicacion: sub(148, 40).trim(),
+    comunaCodigo: comunaCod.trim(),
+    comuna: B4_COD_COMUNAS[comunaCod] || '',
+    ciudad: sub(191, 30).trim(),
+    fechaCompra: _b4Date(sub(221, 8)),
+    compraEntRel: sub(229, 1),
+    costoActualizadoMS: _b4Int(sub(230, 11)),
+    depreciacionAcumMS: _b4Int(sub(241, 11)),
+    plazoVidaUtilMeses: _b4Int(sub(252, 4)),
+    costoCorregDepMS: _b4Int(sub(256, 11)),
+    tasacion1MS: _b4Int(sub(267, 11)),
+    tasacion2MS: _b4Int(sub(278, 11)),
+    nombreTasador1: sub(289, 40).trim(),
+    nombreTasador2: sub(329, 40).trim(),
+    fechaTasacion1: _b4Date(sub(369, 8)),
+    fechaTasacion2: _b4Date(sub(377, 8)),
+    deterioroMS: _b4Int(sub(385, 11)),
+    valorFinalMS: _b4Int(sub(422, 12)),    // M$ — valor contable cierre
+    copropiedad: _b4Decimal(sub(434, 4), 2, 2),
+    prohibicionGravamen: sub(438, 1),
+    activoRespaldaReserva: sub(439, 5).trim(),
+    nombreFondo: sub(444, 30).trim(),
+    nombreCartera: sub(474, 30).trim(),
+    tsa: sub(504, 2).trim(),
+  };
+}
+
+function parseB4File(lines, filename) {
+  const header = lines[0];
+  let rut, nombre, periodo, detailStart;
+  const inferred = inferFromFilename(filename);
+  if (!header || header.charAt(0) !== '1' || header.length < 50) {
+    if (!inferred) return null;
+    rut = inferred.rut; nombre = inferred.nombre; periodo = inferred.periodo;
+    detailStart = 0;
+  } else {
+    const rutDigits = header.substring(1, 10);
+    const dv = header.substring(10, 11).toUpperCase();
+    rut = rutDigits + '-' + dv;
+    nombre = header.substring(11, 71).trim();
+    periodo = (inferred && inferred.periodo) || header.substring(71, 77).trim();
+    detailStart = 1;
+    if (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[rut]) {
+      nombre = INSURER_NAME_OVERRIDES[rut];
+    } else if (FILENAME_RUT_TO_INSURER) {
+      const stripped = rutDigits.replace(/^0+/, '');
+      if (FILENAME_RUT_TO_INSURER[stripped]) nombre = FILENAME_RUT_TO_INSURER[stripped];
+    }
+  }
+
+  const bienes = [];
+  let totalDetailLines = 0, skippedLines = 0;
+  for (let i = detailStart; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.charAt(0) !== '2') continue;
+    totalDetailLines++;
+    if (line.length < 506) { skippedLines++; continue; }
+    try {
+      const rec = parseB4Detail(line);
+      rec.familia = 'Bienes raíces';
+      // CLP a fines de agregación top-down (M$ × 1000 = pesos)
+      rec.valorFinalCLP = rec.valorFinalMS * 1000;
+      bienes.push(rec);
+    } catch (e) {
+      console.warn('Parse error B.4:', filename, 'line', i, e);
+      skippedLines++;
+    }
+  }
+
+  return {
+    fileType: 'b4',
+    fileName: filename,
+    insurerRut: rut,
+    insurerName: nombre,
+    periodo: periodo,
+    b4Records: bienes,
+    parseStats: { totalDetailLines, parsed: bienes.length, skipped: skippedLines },
+  };
+}
+
+/* =======================================================================
    STATE + STORAGE
    ======================================================================= */
 
@@ -3630,6 +3791,7 @@ function activeFilesB2(ignoreFilters = false) { return activeFiles(ignoreFilters
 function activeFilesB5(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b5'); }
 function activeFilesB8(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b8'); }
 function activeFilesB1(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b1'); }
+function activeFilesB4(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b4'); }
 
 // Vista unificada del dashboard: cuotas de fondos de inversión (CFI), tanto
 // nacionales (B.2) como administradas por AGFs chilenas con activos en el
@@ -8633,10 +8795,14 @@ function readFileAsText(file) {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = () => reject(reader.error);
-    // CMF files use latin-1; FileReader doesn't support latin-1 natively in all browsers,
-    // but plain ASCII chars (digits, letters, spaces) are identical in UTF-8 and latin-1.
-    // Spanish accented chars in NOMBRE may render as bytes — we handle that gracefully.
-    reader.readAsText(file, 'iso-8859-1');
+    // Archivos CMF modernos: UTF-8. Los decoders Python oficiales (B.1/B.4/B.6/B.7)
+    // los abren con encoding='utf-8'. Cambio importante para B.4 cuyos campos de
+    // texto (NOMBRE_TASADOR, UBICACION, ARRENDATARIO) suelen tener tildes/Ñ que
+    // ocupan 2 bytes en UTF-8 — si se lee como latin-1 los offsets se desplazan
+    // y VALOR_FINAL queda en posición incorrecta.
+    // B.2/B.5/B.8 no contienen UTF-8 multi-byte en detalle, así que leerlos como
+    // UTF-8 da el mismo resultado bit-exacto que latin-1.
+    reader.readAsText(file, 'utf-8');
   });
 }
 
