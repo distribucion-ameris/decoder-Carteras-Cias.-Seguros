@@ -430,7 +430,38 @@
     box-shadow: var(--shadow-sm);
     width: fit-content;
     max-width: 100%;
-    overflow-x: auto;
+    /* overflow: visible para que el dropdown 'Fondos de inversión' pueda
+       salir por debajo sin clipping. Antes había overflow-x: auto pero ya
+       no hace falta con solo 3 botones de nivel raíz. */
+    overflow: visible;
+  }
+  /* Trigger del dropdown 'Fondos de inversión' — estilo de pestaña pero
+     con flecha y comportamiento de menú. */
+  .tab.tab-group-trigger {
+    display: inline-flex;
+    align-items: center;
+  }
+  .tab.tab-group-trigger.active {
+    color: white;
+    background: var(--c-ameris-blue);
+    box-shadow: 0 2px 6px rgba(31,68,197,.28);
+  }
+  /* Items dentro del dropdown — estilo plano de menu-item, NO heredan el
+     pill style de .tab. */
+  .tab.tab-group-item {
+    display: block;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--c-ameris-navy);
+    background: transparent;
+    box-shadow: none;
+    white-space: normal;
+    text-align: left;
+  }
+  .tab.tab-group-item:hover {
+    background: #f0f9ff;
+    color: var(--c-ameris-navy);
   }
   .tab {
     padding: 9px 18px;
