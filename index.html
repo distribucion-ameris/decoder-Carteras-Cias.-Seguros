@@ -8563,25 +8563,34 @@ function renderTopDown() {
 
   // Helper: dropzone embebida que acepta cualquier tipo de archivo CMF.
   // Lo wireamos por delegación al cargar el DOM (clase .topdown-dz).
+  // El botón "Agregar carpeta" es repetible: cada click suma archivos al
+  // STATE sin borrar los anteriores. Permite construir evolución histórica
+  // cargando una carpeta de período por vez (la limitación de webkitdirectory
+  // es que solo permite UNA carpeta por click — pero el flujo se puede
+  // repetir N veces).
+  const hasFiles = STATE.files.length > 0;
+  const folderBtnLabel = hasFiles ? '📁 Agregar otra carpeta' : '📁 Seleccionar carpeta';
+  const filesBtnLabel = hasFiles ? '📄 Agregar más archivos' : '📄 Seleccionar archivos';
   const topdownDz = `
     <div class="topdown-dz" style="background:linear-gradient(180deg,#f0f9ff 0%,#ffffff 100%);border:2px dashed var(--c-ameris-cyan);border-radius:8px;padding:24px;text-align:center;margin-bottom:16px;transition:all 0.15s">
       <div style="font-size:32px;margin-bottom:6px">📂</div>
       <div style="font-size:14px;font-weight:600;color:var(--c-ameris-navy);margin-bottom:6px">Arrastra archivos o carpetas CMF acá</div>
       <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">
-        Carpetas: el dashboard recorre recursivamente y carga todos los archivos válidos.<br>
-        <strong>Múltiples períodos:</strong> arrastra varias carpetas a la vez (ej. <code>202601v/</code>, <code>202602v/</code>, <code>202603v/</code>) o la carpeta <code>Datos/</code> entera para ver evolución histórica.<br>
+        <strong>Evolución histórica:</strong> arrastrá la carpeta <code>Datos/</code> entera, o repetí "Agregar otra carpeta" para cargar un período por vez (ej. <code>202601v/</code>, después <code>202602v/</code>, etc.).<br>
         Acepta cualquier mes: <code>a</code>/<code>b</code>/<code>c</code>/<code>i</code>/<code>o</code>/<code>p</code>/<code>x</code> + <code>AAAAMM</code> + <code>v</code>/<code>g</code> + <code>.RUT</code>
       </div>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button type="button" class="btn topdown-dz-files-btn" style="font-size:12.5px">📄 Seleccionar archivos</button>
-        <button type="button" class="btn topdown-dz-folder-btn" style="font-size:12.5px">📁 Seleccionar carpeta</button>
+        <button type="button" class="btn topdown-dz-files-btn" style="font-size:12.5px">${filesBtnLabel}</button>
+        <button type="button" class="btn topdown-dz-folder-btn" style="font-size:12.5px">${folderBtnLabel}</button>
       </div>
+      ${hasFiles ? `<div style="font-size:11px;color:var(--c-muted);margin-top:8px;font-style:italic">✓ Los archivos previos se mantienen — los nuevos se agregan al historial.</div>` : ''}
       <input type="file" multiple class="topdown-dz-input" style="display:none">
       <input type="file" multiple class="topdown-dz-folder-input" style="display:none" webkitdirectory directory>
     </div>
   `;
 
-  // Helper: contador resumen de archivos cargados por tipo, con CTA "Cargar más".
+  // Helper: contador resumen de archivos cargados por tipo, con CTAs para
+  // agregar archivos sueltos o una carpeta más (evolución histórica).
   function topdownFileSummary() {
     const counts = {
       'B.1': activeFilesB1().length, 'B.2': activeFilesB2().length,
@@ -8594,10 +8603,19 @@ function renderTopDown() {
       const bg = n > 0 ? '#f0fdf4' : '#f9fafb';
       return `<span style="display:inline-block;padding:3px 9px;border-radius:12px;background:${bg};color:${color};font-size:11.5px;font-weight:600;margin-right:4px">${k}: ${n}</span>`;
     }).join('');
+    // Período más antiguo y más reciente representados, para evidenciar el
+    // rango histórico que está cubriendo.
+    const periods = activePeriods();
+    const rangoLabel = periods.length >= 2
+      ? `<span style="font-size:11px;color:var(--c-muted);margin-left:8px">Rango: <strong>${fmtPeriod(periods[0])}</strong> → <strong>${fmtPeriod(periods[periods.length-1])}</strong> · ${periods.length} períodos</span>`
+      : '';
     return `
       <div style="background:white;border:1px solid var(--c-border);border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <div style="font-size:12px"><strong style="color:var(--c-ameris-navy)">Archivos cargados:</strong> ${items}</div>
-        <button class="btn btn-action topdown-add-files" style="font-size:12px;padding:6px 12px">+ Cargar más archivos</button>
+        <div style="font-size:12px"><strong style="color:var(--c-ameris-navy)">Archivos cargados:</strong> ${items}${rangoLabel}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-action topdown-add-files" style="font-size:12px;padding:6px 12px">+ Archivos</button>
+          <button class="btn btn-action topdown-add-folder" style="font-size:12px;padding:6px 12px">+ Carpeta</button>
+        </div>
       </div>
     `;
   }
@@ -8954,13 +8972,38 @@ function _wireTopDownDropzone(container) {
       }
     });
   });
-  // Botón "+ Cargar más archivos" en el summary
+  // Botón "+ Archivos" en el summary → reusar input global de la actions-bar
   container.querySelectorAll('.topdown-add-files').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      // Reusar el input file global de la actions-bar
       const globalInput = document.getElementById('btn-add-files-input');
       if (globalInput) globalInput.click();
+    });
+  });
+  // Botón "+ Carpeta" en el summary → reusar el input webkitdirectory de la
+  // dropzone embebida. Si no existe (porque ya no se renderiza el empty state)
+  // creamos uno on-the-fly y lo despachamos.
+  container.querySelectorAll('.topdown-add-folder').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const existing = container.querySelector('.topdown-dz-folder-input');
+      if (existing) {
+        existing.click();
+        return;
+      }
+      // Fallback: crear un input on-the-fly que dispara ingestFiles directamente
+      const onTheFly = document.createElement('input');
+      onTheFly.type = 'file';
+      onTheFly.multiple = true;
+      onTheFly.setAttribute('webkitdirectory', '');
+      onTheFly.setAttribute('directory', '');
+      onTheFly.style.display = 'none';
+      document.body.appendChild(onTheFly);
+      onTheFly.addEventListener('change', () => {
+        if (onTheFly.files.length > 0) ingestFiles(onTheFly.files);
+        onTheFly.remove();
+      });
+      onTheFly.click();
     });
   });
 }
