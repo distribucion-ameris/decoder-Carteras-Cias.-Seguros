@@ -1950,17 +1950,42 @@
     </div>
   </div>
 
-  <!-- TABS -->
+  <!-- TABS — Top Down como entrada principal. Las vistas focalizadas en
+       fondos de inversión (B.2 nacional + B.5 extranjero) se agrupan en un
+       dropdown 'Fondos de inversión' para reducir el ruido visual en la
+       barra. Pulso Ameris queda aparte por ser específica de Ameris. -->
   <nav class="tabs" role="tablist">
-    <!-- Pestañas ordenadas por granularidad creciente del análisis top-down:
-         Sistema (vista más amplia) → Cía → AGF/Fondo (cortes específicos) →
-         vistas complementarias (evolución temporal, extranjero, Pulso Ameris). -->
     <button class="tab active" data-tab="topdown" role="tab" title="Análisis Top Down: del sistema asegurador completo (cartera consolidada B.8) hasta el detalle de cada compañía">Top Down · Sistema</button>
-    <button class="tab" data-tab="general" role="tab" title="Vista panorámica del sistema: KPIs, distribución por categoría, top AGFs y top compañías">Resumen General</button>
-    <button class="tab" data-tab="insurer" role="tab" title="Detalle de la cartera de cada compañía de seguros, agrupado por categoría">Por Compañía de Seguros</button>
-    <button class="tab" data-tab="agf" role="tab" title="Análisis agrupado por AGF/Emisor con drill-down al detalle por fondo y compañía cliente">Por AGF / Emisor</button>
-    <button class="tab" data-tab="evolucion" role="tab" title="Evolución mes a mes con sparklines, gráfico de tendencia y top movers">Evolución</button>
-    <button class="tab" data-tab="extranjero" role="tab" title="Inversión en el extranjero (archivos B.5): bonos, fondos y acciones extranjeras">Extranjero (B.5)</button>
+
+    <div class="tab-group" id="tab-group-fondos" style="position:relative;display:inline-block">
+      <button class="tab tab-group-trigger" id="tab-group-fondos-btn" type="button" role="tab" aria-haspopup="true" aria-expanded="false" title="Vistas focalizadas en fondos de inversión nacionales (B.2) y extranjeros (B.5)">
+        <span id="tab-group-fondos-label">Fondos de inversión</span>
+        <span style="margin-left:4px;font-size:10px">▾</span>
+      </button>
+      <div class="tab-group-menu" id="tab-group-fondos-menu" style="display:none;position:absolute;top:100%;left:0;background:white;border:1px solid var(--c-border);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.12);min-width:240px;z-index:100;padding:6px;margin-top:4px">
+        <button class="tab tab-group-item" data-tab="general" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Vista panorámica del sistema: KPIs, distribución por categoría, top AGFs y top compañías">
+          <strong>Resumen General</strong>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">KPIs, distribución y top movers del sistema</div>
+        </button>
+        <button class="tab tab-group-item" data-tab="insurer" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Detalle de la cartera de cada compañía de seguros, agrupado por categoría">
+          <strong>Por Compañía de Seguros</strong>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Cartera CFI por aseguradora con drill-down</div>
+        </button>
+        <button class="tab tab-group-item" data-tab="agf" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Análisis agrupado por AGF/Emisor con drill-down al detalle por fondo y compañía cliente">
+          <strong>Por AGF / Emisor</strong>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Ranking de AGFs, fondos y compañías cliente</div>
+        </button>
+        <button class="tab tab-group-item" data-tab="evolucion" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Evolución mes a mes con sparklines, gráfico de tendencia y top movers">
+          <strong>Evolución</strong>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Tendencia mes a mes con top movers</div>
+        </button>
+        <button class="tab tab-group-item" data-tab="extranjero" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Inversión en el extranjero (archivos B.5): bonos, fondos y acciones extranjeras">
+          <strong>Extranjero (B.5)</strong>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Bonos, fondos y acciones internacionales</div>
+        </button>
+      </div>
+    </div>
+
     <button class="tab tab-ameris" data-tab="pulso" role="tab" title="Análisis específico para Ameris AGF: AUM, ranking, market share, concentración, tendencias">Pulso Ameris</button>
   </nav>
 
@@ -10313,15 +10338,74 @@ function showSuccessToast(message) {
 }
 
 function setupTabs() {
-  document.querySelectorAll('.tab').forEach(btn => {
+  // Labels y descripciones cortas para sincronizar el trigger del dropdown
+  // 'Fondos de inversión' con la sub-pestaña actualmente activa.
+  const fondosLabels = {
+    general:    'Fondos · Resumen General',
+    insurer:    'Fondos · Por Compañía',
+    agf:        'Fondos · Por AGF',
+    evolucion:  'Fondos · Evolución',
+    extranjero: 'Fondos · Extranjero',
+  };
+  const fondosGroupTabs = new Set(Object.keys(fondosLabels));
+  function updateFondosTrigger(activeTabId) {
+    const triggerLabel = document.getElementById('tab-group-fondos-label');
+    const triggerBtn = document.getElementById('tab-group-fondos-btn');
+    if (!triggerLabel || !triggerBtn) return;
+    if (fondosGroupTabs.has(activeTabId)) {
+      triggerLabel.textContent = fondosLabels[activeTabId];
+      triggerBtn.classList.add('active');
+    } else {
+      triggerLabel.textContent = 'Fondos de inversión';
+      triggerBtn.classList.remove('active');
+    }
+  }
+
+  // Click en pestañas regulares (Top Down, Pulso Ameris) y en items del menú.
+  // El trigger del dropdown se maneja aparte.
+  document.querySelectorAll('.tab[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      const isDropdownItem = btn.classList.contains('tab-group-item');
+      // Items del dropdown NO marcan 'active' en sí mismos (mantienen su estilo
+      // de menu-item). El trigger del dropdown refleja la activa via
+      // updateFondosTrigger() más abajo.
+      if (!isDropdownItem) btn.classList.add('active');
+      const panel = document.getElementById('tab-' + btn.dataset.tab);
+      if (panel) panel.classList.add('active');
+      updateFondosTrigger(btn.dataset.tab);
+      const menu = document.getElementById('tab-group-fondos-menu');
+      if (menu) menu.style.display = 'none';
+      const trigger = document.getElementById('tab-group-fondos-btn');
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
       renderActiveTab();
     });
   });
+
+  // Toggle del dropdown 'Fondos de inversión'
+  const fondosTrigger = document.getElementById('tab-group-fondos-btn');
+  const fondosMenu = document.getElementById('tab-group-fondos-menu');
+  if (fondosTrigger && fondosMenu) {
+    fondosTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = fondosMenu.style.display === 'block';
+      fondosMenu.style.display = isOpen ? 'none' : 'block';
+      fondosTrigger.setAttribute('aria-expanded', String(!isOpen));
+    });
+    // Cerrar al hacer click fuera
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#tab-group-fondos')) {
+        fondosMenu.style.display = 'none';
+        fondosTrigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+    // Hover effect en items del menú
+    document.querySelectorAll('.tab-group-item').forEach(item => {
+      item.addEventListener('mouseenter', () => { item.style.background = '#f0f9ff'; });
+      item.addEventListener('mouseleave', () => { item.style.background = 'transparent'; });
+    });
+  }
 
   // Botón "Calidad de datos" en la action-bar (junto a Exportar CSV /
   // Limpiar datos): muestra el panel sin ocupar lugar en la tabbar.
