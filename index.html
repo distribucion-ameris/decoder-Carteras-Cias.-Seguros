@@ -2259,7 +2259,7 @@ function categorize(rec) {
 // Filename pattern: aYYYYMMv.RUT_DIGITS  (B.2 acciones/cuotas)
 //                   xYYYYMMv.RUT_DIGITS  (B.5 inversiones extranjero)
 function inferFromFilename(filename) {
-  const m = filename.match(/^[axcib](\d{6})[vg]\.([0-9Kk]+)/i);
+  const m = filename.match(/^[axcibo](\d{6})[vg]\.([0-9Kk]+)/i);
   if (!m) return null;
   const periodo = m[1];
   const rutDigits = m[2];
@@ -2278,9 +2278,11 @@ function detectFileType(filename, sampleLine) {
   if (/^c\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b8';
   if (/^i\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b1';
   if (/^b\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b4';
+  if (/^o\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b6';
   if (sampleLine && sampleLine.length >= 950) return 'b1';
   if (sampleLine && sampleLine.length >= 600) return 'b5';
-  if (sampleLine && sampleLine.length >= 480 && sampleLine.length < 550) return 'b4';
+  if (sampleLine && sampleLine.length >= 500 && sampleLine.length < 525) return 'b6';
+  if (sampleLine && sampleLine.length >= 480 && sampleLine.length < 510) return 'b4';
   if (sampleLine && sampleLine.length >= 138 && sampleLine.length < 200) return 'b8';
   return 'b2';
 }
@@ -2295,6 +2297,7 @@ function parseFile(text, filename) {
   if (ft === 'b8') return parseB8File(lines, filename);
   if (ft === 'b1') return parseB1File(lines, filename);
   if (ft === 'b4') return parseB4File(lines, filename);
+  if (ft === 'b6') return parseB6File(lines, filename);
   return parseB2File(lines, filename);
 }
 
@@ -3140,6 +3143,162 @@ function parseB4File(lines, filename) {
 }
 
 /* =======================================================================
+   PARSER for B.6 (Otras Inversiones + Alternativos NCG 152).
+   File naming: oAAAAMMv.<RUT_CIA>  (e.g., o202603v.96812960)
+   Líneas de 510 chars UTF-8. Cubre cajas, cuentas corrientes, mobiliaria,
+   préstamos, avances a pólizas y activos alternativos N°7 NCG 152 (PE,
+   infraestructura, deuda privada). Source: Circular CMF 1.835 + decoder_b6.py.
+   ======================================================================= */
+
+const B6_COD_NOMBRE_INV = {
+  CAJA:'Caja', MOBILIARIA:'Inv. mobiliaria (activo fijo)',
+  AVANCES:'Avances a tenedores de pólizas',
+  OTRAS:'Otras inv. financieras',
+  OTROS7:'Activos N°7 NCG 152 (alternativos)',
+  PRESTAMOS:'Préstamos',
+};
+
+const B6_COD_TIPO_INSTR = {
+  CT:'Cuenta corriente bancaria (CL)',
+  CTE:'Cuenta corriente bancaria (extranjero)',
+  CJ:'Caja (efectivo físico)',
+  OIND:'Otras inversiones financieras (CL)',
+  OIED:'Otras inversiones financieras (extr.)',
+  IMEQ:'Equipos computacionales',
+  IMMM:'Muebles y máquinas',
+  IMOT:'Inv. mobiliaria — otros',
+  IMVH:'Vehículos',
+  PCNP:'Préstamo c/p no relacionado',
+  PCOM:'Préstamo comercial',
+  PPEN:'Préstamo a pensionados',
+  PHIP:'Préstamo hipotecario',
+  AVTP:'Avance a tenedores de pólizas',
+};
+
+// Mapeo a familia top-down. OIND/OIED con codigo OTROS7 son alternativos.
+// El resto se clasifica por TIPO_INSTRUMENTO.
+function b6FamiliaFor(codigo, tipo) {
+  if (codigo === 'OTROS7') return 'Alternativos (NCG 152)';
+  if (tipo === 'CT' || tipo === 'CJ') return 'Liquidez';
+  if (tipo === 'CTE') return 'Liquidez extran.';
+  if (/^IM/.test(tipo)) return 'Activo fijo';
+  if (tipo === 'PCOM' || tipo === 'PCNP' || tipo === 'PHIP' ||
+      tipo === 'PPEN' || tipo === 'AVTP') return 'Préstamos';
+  if (tipo === 'OIED') return 'Otras inv. extranjeras';
+  if (tipo === 'OIND') return 'Otras inv. financieras';
+  return 'Otros';
+}
+
+function _b6Int(s) {
+  if (!s) return 0;
+  let t = s.trim();
+  if (!t) return 0;
+  const sign = t[0] === '-' ? -1 : 1;
+  if (t[0] === '+' || t[0] === '-') t = t.substring(1);
+  const n = parseInt(t, 10);
+  return isFinite(n) ? sign * n : 0;
+}
+function _b6Date(s) {
+  if (!s) return '';
+  const t = s.trim();
+  if (!t || t === '00000000' || t.length !== 8 || t === '19000101') return '';
+  const y = parseInt(t.substring(0, 4), 10);
+  const m = parseInt(t.substring(4, 6), 10);
+  const d = parseInt(t.substring(6, 8), 10);
+  if (!isFinite(y) || y < 1900 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+function parseB6Detail(line) {
+  const sub = (i, len) => line.substring(i, i + len);
+  const codigo = sub(1, 20).trim();
+  const tipoInstr = sub(53, 10).trim();
+  return {
+    codigoInversion: codigo,
+    codigoInversionDesc: B6_COD_NOMBRE_INV[codigo] || codigo,
+    nemo: sub(21, 30).trim(),
+    pais: sub(51, 2).trim(),
+    tipoInstrumento: tipoInstr,
+    tipoInstrumentoDesc: B6_COD_TIPO_INSTR[tipoInstr] || tipoInstr,
+    moneda: sub(63, 6).trim(),
+    valorCostoActualizadoMS: _b6Int(sub(69, 11)),
+    depreciacionAcumMS: _b6Int(sub(80, 11)),
+    valorRazonableMS: _b6Int(sub(91, 13)),
+    deterioroMS: _b6Int(sub(104, 12)),
+    valorFinalMS: _b6Int(sub(116, 12)),
+    prohibicion: sub(128, 1),
+    clasifRiesgo: sub(129, 15).trim(),
+    activoRespaldaReserva: sub(144, 5).trim(),
+    nombreFondo: sub(149, 30).trim(),
+    nombreCartera: sub(179, 30).trim(),
+    custodia: sub(209, 3).trim(),
+    nombreCustodio: sub(212, 60).trim(),
+    susceptibleCustodia: sub(272, 1),
+    activoEnMargen: sub(273, 10).trim(),
+    tsa: sub(283, 2).trim(),
+    metodoValorizEEFF: sub(285, 6).trim(),
+    criterioValorizacion: sub(291, 2).trim(),
+    fechaInforme: _b6Date(sub(297, 8)),
+    tipoDeActivo: sub(305, 60).trim(),
+    descripcionActivos: sub(365, 100).trim(),
+    clasifRiesgoPais: sub(465, 4).trim(),
+    regulador: sub(469, 40).trim(),
+  };
+}
+
+function parseB6File(lines, filename) {
+  const header = lines[0];
+  let rut, nombre, periodo, detailStart;
+  const inferred = inferFromFilename(filename);
+  if (!header || header.charAt(0) !== '1' || header.length < 50) {
+    if (!inferred) return null;
+    rut = inferred.rut; nombre = inferred.nombre; periodo = inferred.periodo;
+    detailStart = 0;
+  } else {
+    const rutDigits = header.substring(1, 10);
+    const dv = header.substring(10, 11).toUpperCase();
+    rut = rutDigits + '-' + dv;
+    nombre = header.substring(11, 71).trim();
+    periodo = (inferred && inferred.periodo) || header.substring(71, 77).trim();
+    detailStart = 1;
+    if (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[rut]) {
+      nombre = INSURER_NAME_OVERRIDES[rut];
+    } else if (FILENAME_RUT_TO_INSURER) {
+      const stripped = rutDigits.replace(/^0+/, '');
+      if (FILENAME_RUT_TO_INSURER[stripped]) nombre = FILENAME_RUT_TO_INSURER[stripped];
+    }
+  }
+
+  const items = [];
+  let totalDetailLines = 0, skippedLines = 0;
+  for (let i = detailStart; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.charAt(0) !== '2') continue;
+    totalDetailLines++;
+    if (line.length < 510) { skippedLines++; continue; }
+    try {
+      const rec = parseB6Detail(line);
+      rec.familia = b6FamiliaFor(rec.codigoInversion, rec.tipoInstrumento);
+      rec.valorFinalCLP = rec.valorFinalMS * 1000;
+      items.push(rec);
+    } catch (e) {
+      console.warn('Parse error B.6:', filename, 'line', i, e);
+      skippedLines++;
+    }
+  }
+
+  return {
+    fileType: 'b6',
+    fileName: filename,
+    insurerRut: rut,
+    insurerName: nombre,
+    periodo: periodo,
+    b6Records: items,
+    parseStats: { totalDetailLines, parsed: items.length, skipped: skippedLines },
+  };
+}
+
+/* =======================================================================
    STATE + STORAGE
    ======================================================================= */
 
@@ -3792,6 +3951,7 @@ function activeFilesB5(ignoreFilters = false) { return activeFiles(ignoreFilters
 function activeFilesB8(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b8'); }
 function activeFilesB1(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b1'); }
 function activeFilesB4(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b4'); }
+function activeFilesB6(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b6'); }
 
 // Vista unificada del dashboard: cuotas de fondos de inversión (CFI), tanto
 // nacionales (B.2) como administradas por AGFs chilenas con activos en el
