@@ -8568,7 +8568,8 @@ function renderTopDown() {
       <div style="font-size:32px;margin-bottom:6px">📂</div>
       <div style="font-size:14px;font-weight:600;color:var(--c-ameris-navy);margin-bottom:6px">Arrastra archivos o carpetas CMF acá</div>
       <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">
-        Carpetas: el dashboard recorre recursivamente y carga todos los archivos válidos.
+        Carpetas: el dashboard recorre recursivamente y carga todos los archivos válidos.<br>
+        <strong>Múltiples períodos:</strong> arrastra varias carpetas a la vez (ej. <code>202601v/</code>, <code>202602v/</code>, <code>202603v/</code>) o la carpeta <code>Datos/</code> entera para ver evolución histórica.<br>
         Acepta cualquier mes: <code>a</code>/<code>b</code>/<code>c</code>/<code>i</code>/<code>o</code>/<code>p</code>/<code>x</code> + <code>AAAAMM</code> + <code>v</code>/<code>g</code> + <code>.RUT</code>
       </div>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
@@ -9949,6 +9950,7 @@ async function extractAllFilesFromDataTransfer(dataTransfer) {
   }
 
   for (const e of entries) await walkEntry(e, 0);
+  console.info(`extractAllFilesFromDataTransfer: ${itemsLen} items recibidos, ${entries.length} entries (carpetas o archivos top-level), ${directFiles.length} direct files, ${files.length} files extraídos al final`);
   return files;
 }
 
@@ -9980,65 +9982,112 @@ function _qualitySnapshot() {
   return s;
 }
 
+// Procesa un archivo individual y devuelve { result: 'ok'|'skipped'|'error', parsed?, error? }.
+// No muta STATE; el caller acumula y aplica al final para minimizar redibujos.
+async function _processFileForIngest(f, useFilter) {
+  try {
+    if (useFilter && !isCMFCarteraFilename(f.name)) {
+      return { result: 'skipped' };
+    }
+    const text = await readFileAsText(f);
+    const parsed = parseFile(text, f.name);
+    if (!parsed) {
+      if (isCMFCarteraFilename(f.name)) {
+        return { result: 'error', error: 'Formato no reconocido' };
+      }
+      return { result: 'skipped' };
+    }
+    const recordCount =
+      (parsed.holdings  || []).length +
+      (parsed.b5Records || []).length +
+      (parsed.b1Records || []).length +
+      (parsed.b4Records || []).length +
+      (parsed.b6Records || []).length +
+      (parsed.b7Records || []).length +
+      (parsed.cartera   || []).length;
+    if (recordCount === 0 && (!parsed.insurerName || parsed.insurerName === '')) {
+      return { result: 'error', error: 'Archivo sin registros válidos' };
+    }
+    return { result: 'ok', parsed };
+  } catch (e) {
+    console.error('ingest error', f.name, e);
+    return { result: 'error', error: e.message || 'Error de lectura' };
+  }
+}
+
+// Mini toast persistente para progreso de carga grande. Reusable.
+let _ingestProgressToast = null;
+function _showIngestProgress(done, total) {
+  if (!_ingestProgressToast) {
+    _ingestProgressToast = document.createElement('div');
+    _ingestProgressToast.id = 'ingest-progress-toast';
+    _ingestProgressToast.style.cssText =
+      'position:fixed;top:14px;right:14px;background:white;border:1px solid var(--c-ameris-blue);' +
+      'border-radius:6px;padding:10px 16px;box-shadow:0 4px 14px rgba(0,0,0,0.15);' +
+      'z-index:9999;font-size:12.5px;color:var(--c-ameris-navy);min-width:240px';
+    document.body.appendChild(_ingestProgressToast);
+  }
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  _ingestProgressToast.innerHTML = `
+    <div style="font-weight:600;margin-bottom:4px">Procesando archivos…</div>
+    <div style="font-size:11px;color:var(--c-muted);margin-bottom:6px">${done.toLocaleString('es-CL')} / ${total.toLocaleString('es-CL')} (${pct}%)</div>
+    <div style="background:#e5e7eb;height:6px;border-radius:3px;overflow:hidden">
+      <div style="background:var(--c-ameris-blue);height:100%;width:${pct}%;transition:width 0.15s"></div>
+    </div>
+  `;
+}
+function _hideIngestProgress() {
+  if (_ingestProgressToast) {
+    _ingestProgressToast.remove();
+    _ingestProgressToast = null;
+  }
+}
+
 async function ingestFiles(fileList, expectedType) {
   const beforeSnapshot = _qualitySnapshot();
   const arr = Array.from(fileList);
-  if (arr.length >= 10) {
-    showSuccessToast(`Procesando ${arr.length} archivos...`);
-  }
+  if (arr.length === 0) return;
+  const showProgress = arr.length >= 50;
+  if (showProgress) _showIngestProgress(0, arr.length);
+  else if (arr.length >= 10) showSuccessToast(`Procesando ${arr.length} archivos...`);
+
   let mismatchedCount = 0;
   let silentlySkipped = 0;
-  // Pre-filtro SOLO si vienen muchos archivos (probablemente una carpeta).
-  // Para selecciones chicas y explícitas (≤5 archivos), procesamos todo —
-  // el usuario eligió cada uno a propósito y un mensaje "Formato no reconocido"
-  // es más útil que silencio.
+  // Filtro: si vienen muchos archivos, probablemente una carpeta — pre-filtramos.
   const useFilter = arr.length > 5;
-  for (const f of arr) {
-    try {
-      if (useFilter && !isCMFCarteraFilename(f.name)) {
+
+  // Paralelizamos en chunks. CONCURRENCY ~10 es buen balance entre velocidad
+  // y memoria/file handles del navegador. Para 1000+ archivos da ~10x más
+  // rápido que secuencial sin tirar el navegador.
+  const CONCURRENCY = 10;
+  let done = 0;
+  for (let i = 0; i < arr.length; i += CONCURRENCY) {
+    const chunk = arr.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(chunk.map(f => _processFileForIngest(f, useFilter)));
+    // Aplicar resultados a STATE secuencialmente (mutaciones consistentes)
+    for (let k = 0; k < results.length; k++) {
+      const r = results[k];
+      const f = chunk[k];
+      if (r.result === 'skipped') {
         silentlySkipped++;
-        continue;
+      } else if (r.result === 'error') {
+        STATE.errors.push({ name: f.name, error: r.error });
+      } else {
+        const parsed = r.parsed;
+        if (expectedType && parsed.fileType !== expectedType) mismatchedCount++;
+        const idx = STATE.files.findIndex(x =>
+          x.insurerRut === parsed.insurerRut &&
+          x.periodo === parsed.periodo &&
+          (x.fileType || 'b2') === parsed.fileType);
+        if (idx >= 0) STATE.files[idx] = parsed;
+        else STATE.files.push(parsed);
       }
-      const text = await readFileAsText(f);
-      const parsed = parseFile(text, f.name);
-      if (!parsed) {
-        // Si pasó el filtro pero el parser no reconoció, agregar a errors
-        // SOLO si el filename pinta a CMF (sino skip silencioso).
-        if (isCMFCarteraFilename(f.name)) {
-          STATE.errors.push({ name: f.name, error: 'Formato no reconocido' });
-        } else {
-          silentlySkipped++;
-        }
-        continue;
-      }
-      // Conteo de registros — cada tipo de archivo guarda en su propio campo.
-      const recordCount =
-        (parsed.holdings   || []).length +
-        (parsed.b5Records  || []).length +
-        (parsed.b1Records  || []).length +
-        (parsed.b4Records  || []).length +
-        (parsed.b6Records  || []).length +
-        (parsed.b7Records  || []).length +
-        (parsed.cartera    || []).length;
-      if (recordCount === 0 && (!parsed.insurerName || parsed.insurerName === '')) {
-        STATE.errors.push({ name: f.name, error: 'Archivo sin registros válidos' });
-        continue;
-      }
-      // Track when a file dropped on the wrong zone is auto-routed by detection.
-      if (expectedType && parsed.fileType !== expectedType) mismatchedCount++;
-      // dedupe: same insurer RUT + period + fileType. B.2 and B.5 of same insurer
-      // and period coexist (different file types).
-      const idx = STATE.files.findIndex(x =>
-        x.insurerRut === parsed.insurerRut &&
-        x.periodo === parsed.periodo &&
-        (x.fileType || 'b2') === parsed.fileType);
-      if (idx >= 0) STATE.files[idx] = parsed;
-      else STATE.files.push(parsed);
-    } catch (e) {
-      console.error(e);
-      STATE.errors.push({ name: f.name, error: e.message || 'Error de lectura' });
     }
+    done += chunk.length;
+    if (showProgress) _showIngestProgress(done, arr.length);
   }
+  if (showProgress) _hideIngestProgress();
+
   if (mismatchedCount > 0) {
     const otherType = expectedType === 'b2' ? 'B.5' : 'B.2';
     setTimeout(() => alert(
@@ -10046,8 +10095,7 @@ async function ingestFiles(fileList, expectedType) {
       `Los archivos se procesaron correctamente — la detección automática los enrutó al parser correcto. Para evitar este aviso, arrastra los archivos a su zona correspondiente.`
     ), 80);
   }
-  // Diagnóstico de carga para consola: ayuda a entender por qué falta lo
-  // que el usuario esperaba ver.
+  // Diagnóstico
   const processed = arr.length - silentlySkipped;
   console.info(`ingestFiles: ${arr.length} archivos recibidos · ${processed} procesados · ${silentlySkipped} descartados por filtro (no-CMF) · ${STATE.errors.length} errores totales`);
   if (arr.length > 0 && processed === 0) {
