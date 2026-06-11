@@ -8191,6 +8191,17 @@ let TOPDOWN_N3_RUT = '';                    // cía cuyo Nivel 3 estamos viendo
 let TOPDOWN_N3_CLASE = '';                  // 'b1' | 'b4' | 'b6' | 'b7' | 'b2' | 'b5'
 let _topdownPromedioCache = { key: '', value: null };
 
+// Scroll al inicio del contenido del Top Down (no al top absoluto de la
+// página). Evita que al cambiar de nivel el usuario quede mirando el
+// viewport vacío del header. Se hace en el siguiente tick para que el DOM
+// ya esté actualizado tras renderTopDown().
+function _topdownScrollToTop() {
+  setTimeout(() => {
+    const el = document.getElementById('topdown-content');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 0);
+}
+
 // Despacho del Nivel 3 por clase de archivo. Cada clase tiene su propio
 // componente con KPIs y tablas específicas. Por ahora B.1 (renta fija)
 // está implementada; las demás caen a un placeholder hasta su bloque.
@@ -8806,7 +8817,7 @@ function renderTopDown() {
         TOPDOWN_N3_RUT = '';
         TOPDOWN_N3_CLASE = '';
         renderTopDown();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        _topdownScrollToTop();
       });
     }, 0);
     return;
@@ -8929,7 +8940,7 @@ function renderTopDown() {
         TOPDOWN_FULL_RUT = btn.dataset.topdownExpand;
         TOPDOWN_OPEN_RUT = '';
         renderTopDown();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        _topdownScrollToTop();
       });
     });
     // Botones "Ver detalle" → entrar al Nivel 3
@@ -8941,7 +8952,7 @@ function renderTopDown() {
         TOPDOWN_FULL_RUT = '';
         TOPDOWN_OPEN_RUT = '';
         renderTopDown();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        _topdownScrollToTop();
       });
     });
     _wireTopDownDropzone(container);
