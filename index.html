@@ -2259,7 +2259,7 @@ function categorize(rec) {
 // Filename pattern: aYYYYMMv.RUT_DIGITS  (B.2 acciones/cuotas)
 //                   xYYYYMMv.RUT_DIGITS  (B.5 inversiones extranjero)
 function inferFromFilename(filename) {
-  const m = filename.match(/^[axcibo](\d{6})[vg]\.([0-9Kk]+)/i);
+  const m = filename.match(/^[axcibop](\d{6})[vg]\.([0-9Kk]+)/i);
   if (!m) return null;
   const periodo = m[1];
   const rutDigits = m[2];
@@ -2279,7 +2279,9 @@ function detectFileType(filename, sampleLine) {
   if (/^i\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b1';
   if (/^b\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b4';
   if (/^o\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b6';
+  if (/^p\d{6}[vg]\.[0-9Kk]+/i.test(filename)) return 'b7';
   if (sampleLine && sampleLine.length >= 950) return 'b1';
+  if (sampleLine && sampleLine.length >= 580 && sampleLine.length < 600) return 'b7';
   if (sampleLine && sampleLine.length >= 600) return 'b5';
   if (sampleLine && sampleLine.length >= 500 && sampleLine.length < 525) return 'b6';
   if (sampleLine && sampleLine.length >= 480 && sampleLine.length < 510) return 'b4';
@@ -2298,6 +2300,7 @@ function parseFile(text, filename) {
   if (ft === 'b1') return parseB1File(lines, filename);
   if (ft === 'b4') return parseB4File(lines, filename);
   if (ft === 'b6') return parseB6File(lines, filename);
+  if (ft === 'b7') return parseB7File(lines, filename);
   return parseB2File(lines, filename);
 }
 
@@ -3299,6 +3302,230 @@ function parseB6File(lines, filename) {
 }
 
 /* =======================================================================
+   PARSER for B.7 (Derivados y Pactos) fixed-width records.
+   File naming: pAAAAMMv.<RUT_CIA>  (e.g., p202603v.96812960)
+   Líneas de 587 chars UTF-8. Tres tipos de detalle:
+     Tipo 3 — Forwards   (FWC/FWV/FWT)
+     Tipo 5 — Swaps      (IRS/CCS/SCS/SIRS)
+     Tipo 6 — Pactos     (PVCC/PVCV)
+   Source: Circular CMF 1.835 + decoder_b7.py oficial.
+   ======================================================================= */
+
+const B7_COD_TIPO_OP = {
+  FWC:'Forward Compra', FWV:'Forward Venta', FWT:'Forward de Tasa',
+  S:'Swap', SCS:'Cross Currency Swap', IRS:'Interest Rate Swap',
+  SIRS:'Swap de Tasa Interés',
+  PVCC:'Pacto Compromiso Compra', PVCV:'Pacto Compromiso Venta',
+  OPC:'Opción Compra', OPV:'Opción Venta',
+};
+const B7_COD_OBJETIVO = {
+  CBE:'Cobertura riesgos financieros',
+  INV:'Inversión',
+  '1512':'Cobertura Circular 1512 (calce)',
+};
+
+function _b7Int(s) {
+  if (!s) return 0;
+  let t = s.trim();
+  if (!t) return 0;
+  const sign = t[0] === '-' ? -1 : 1;
+  if (t[0] === '+' || t[0] === '-') t = t.substring(1);
+  const n = parseInt(t, 10);
+  return isFinite(n) ? sign * n : 0;
+}
+function _b7Dec(s, dec) {
+  if (!s) return 0;
+  let t = s.trim();
+  if (!t) return 0;
+  const sign = t[0] === '-' ? -1 : 1;
+  if (t[0] === '+' || t[0] === '-') t = t.substring(1);
+  const n = parseInt(t, 10);
+  return isFinite(n) ? sign * n / Math.pow(10, dec) : 0;
+}
+function _b7Date(s) {
+  if (!s) return '';
+  const t = s.trim();
+  if (!t || t === '00000000' || t.length !== 8) return '';
+  return `${t.substring(0,4)}-${t.substring(4,6)}-${t.substring(6,8)}`;
+}
+
+function _b7BaseIdent(line) {
+  const sub = (i, len) => line.substring(i, i + len);
+  return {
+    objetivo:      sub(1, 5).trim(),
+    objetivoDesc:  B7_COD_OBJETIVO[sub(1,5).trim()] || sub(1,5).trim(),
+    tipoOp:        sub(6, 10).trim(),
+    tipoOpDesc:    B7_COD_TIPO_OP[sub(6,10).trim()] || sub(6,10).trim(),
+    folio:         sub(16, 12).trim(),
+    item:          sub(28, 3).trim(),
+    fechaInicio:   _b7Date(sub(31, 8)),
+    fechaVcto:     _b7Date(sub(39, 8)),
+    rutContraparte: sub(47, 10).trim(),
+    contraparte:   sub(77, 60).trim(),
+    paisContraparte: sub(137, 2).trim(),
+    relacionado:   sub(139, 2).trim(),
+    clasifRiesgo:  sub(149, 15).trim(),
+  };
+}
+
+// Tipo 3: Forward. Posiciones del decoder oficial.
+function parseB7Forward(line) {
+  const sub = (i, len) => line.substring(i, i + len);
+  return Object.assign({ subtipo: 'Forward' }, _b7BaseIdent(line), {
+    reserva: sub(164, 5).trim(),
+    nombreFondo: sub(169, 30).trim(),
+    nombreCartera: sub(199, 30).trim(),
+    aoLargoNom: sub(229, 30).trim(),    // moneda/activo pos larga
+    aoCortoNom: sub(259, 30).trim(),    // moneda/activo pos corta
+    nocionalLargo: _b7Dec(sub(289, 16), 3),
+    nocionalCorto: _b7Dec(sub(305, 16), 3),
+    moneda: sub(347, 6).trim(),
+    precioFwdCto: _b7Dec(sub(353, 15), 5),
+    vdmAoLargo: _b7Dec(sub(368, 16), 3),
+    spot: _b7Dec(sub(384, 13), 3),
+    precioFwdMerc: _b7Dec(sub(397, 15), 5),
+    tasaDescuento: _b7Dec(sub(412, 14), 3),
+    vrContrato: _b7Int(sub(426, 14)),
+    origen: sub(454, 30).trim(),
+    margenMS: _b7Int(sub(484, 13)),
+    montoActivo: _b7Int(sub(511, 13)),
+    montoPasivo: _b7Int(sub(524, 13)),
+    efectoResult: _b7Int(sub(537, 14)),
+    tsa: sub(551, 2).trim(),
+    metodo: sub(553, 6).trim(),
+  });
+}
+
+// Tipo 5: Swap
+function parseB7Swap(line) {
+  const sub = (i, len) => line.substring(i, i + len);
+  return Object.assign({ subtipo: 'Swap' }, _b7BaseIdent(line), {
+    nocionalLargo: _b7Dec(sub(164, 16), 3),
+    nocionalCorto: _b7Dec(sub(180, 16), 3),
+    monLargo: sub(222, 6).trim(),
+    monCorto: sub(228, 6).trim(),
+    aoLargoNom: sub(222, 6).trim(),
+    aoCortoNom: sub(228, 6).trim(),
+    tasaLargoCto: sub(234, 30).trim(),
+    tasaCortoCto: sub(264, 30).trim(),
+    vrContrato: _b7Int(sub(389, 14)),
+    origen: sub(417, 30).trim(),
+    reserva: sub(447, 5).trim(),
+    nombreFondo: sub(452, 30).trim(),
+    nombreCartera: sub(482, 30).trim(),
+    margenMS: _b7Int(sub(512, 13)),
+    montoActivo: _b7Int(sub(539, 13)),
+    montoPasivo: _b7Int(sub(552, 13)),
+    efectoResult: _b7Int(sub(565, 14)),
+    tsa: sub(579, 2).trim(),
+    metodo: sub(581, 6).trim(),
+  });
+}
+
+// Tipo 6: Pacto (estructura diferente — sin _b7BaseIdent)
+function parseB7Pacto(line) {
+  const sub = (i, len) => line.substring(i, i + len);
+  const tipoOp = sub(1, 10).trim();
+  const valorizCierre = _b7Int(sub(323, 13));
+  return {
+    subtipo: 'Pacto',
+    tipoOp,
+    tipoOpDesc: B7_COD_TIPO_OP[tipoOp] || tipoOp,
+    folio: sub(11, 10).trim(),
+    item: sub(21, 3).trim(),
+    fechaInicio: _b7Date(sub(24, 8)),
+    fechaVcto: _b7Date(sub(32, 8)),
+    tasaPacto: _b7Dec(sub(40, 13), 3),
+    contraparte: sub(53, 60).trim(),
+    paisContraparte: sub(113, 2).trim(),
+    relacionado: sub(115, 2).trim(),
+    aoNom: sub(117, 30).trim(),
+    serie: sub(147, 30).trim(),
+    rutEmisor: sub(177, 9).trim(),
+    nominal: _b7Dec(sub(188, 16), 3),
+    tirCompra: _b7Dec(sub(204, 13), 3),
+    tasaEmision: _b7Dec(sub(217, 13), 3),
+    aoMonto: _b7Int(sub(230, 13)),
+    moneda: sub(243, 6).trim(),
+    tasaMercado: _b7Dec(sub(249, 13), 3),
+    vdmSuscripcion: _b7Dec(sub(262, 16), 3),
+    valorInicial: _b7Dec(sub(278, 16), 3),
+    valorPactado: _b7Dec(sub(294, 16), 3),
+    interesDev: _b7Int(sub(310, 13)),
+    valorizCierre,
+    vdmInformacion: _b7Int(sub(336, 13)),
+    tsa: sub(349, 2).trim(),
+    metodo: sub(351, 6).trim(),
+    // Campos equivalentes para uniformidad con Forward/Swap
+    vrContrato: valorizCierre,
+    montoActivo: valorizCierre,
+    montoPasivo: 0,
+    efectoResult: 0,
+    objetivo: 'CBE',
+    objetivoDesc: 'Cobertura / Pacto',
+    nocionalLargo: 0,
+    nocionalCorto: 0,
+  };
+}
+
+function parseB7File(lines, filename) {
+  const header = lines[0];
+  let rut, nombre, periodo, detailStart;
+  const inferred = inferFromFilename(filename);
+  if (!header || header.charAt(0) !== '1' || header.length < 50) {
+    if (!inferred) return null;
+    rut = inferred.rut; nombre = inferred.nombre; periodo = inferred.periodo;
+    detailStart = 0;
+  } else {
+    const rutDigits = header.substring(1, 10);
+    const dv = header.substring(10, 11).toUpperCase();
+    rut = rutDigits + '-' + dv;
+    nombre = header.substring(11, 71).trim();
+    periodo = (inferred && inferred.periodo) || header.substring(71, 77).trim();
+    detailStart = 1;
+    if (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[rut]) {
+      nombre = INSURER_NAME_OVERRIDES[rut];
+    } else if (FILENAME_RUT_TO_INSURER) {
+      const stripped = rutDigits.replace(/^0+/, '');
+      if (FILENAME_RUT_TO_INSURER[stripped]) nombre = FILENAME_RUT_TO_INSURER[stripped];
+    }
+  }
+
+  const contratos = [];
+  let totalDetailLines = 0, skippedLines = 0;
+  for (let i = detailStart; i < lines.length; i++) {
+    const line = lines[i];
+    const t = line.charAt(0);
+    if (t !== '3' && t !== '5' && t !== '6') continue;
+    totalDetailLines++;
+    if (line.length < 350) { skippedLines++; continue; }
+    try {
+      let rec;
+      if (t === '3') rec = parseB7Forward(line);
+      else if (t === '5') rec = parseB7Swap(line);
+      else rec = parseB7Pacto(line);
+      rec.familia = 'Derivados';
+      // El "valor" para suma top-down es MTM (vr_contrato) en M$ → CLP
+      rec.valorFinalCLP = rec.vrContrato * 1000;
+      contratos.push(rec);
+    } catch (e) {
+      console.warn('Parse error B.7:', filename, 'line', i, e);
+      skippedLines++;
+    }
+  }
+
+  return {
+    fileType: 'b7',
+    fileName: filename,
+    insurerRut: rut,
+    insurerName: nombre,
+    periodo: periodo,
+    b7Records: contratos,
+    parseStats: { totalDetailLines, parsed: contratos.length, skipped: skippedLines },
+  };
+}
+
+/* =======================================================================
    STATE + STORAGE
    ======================================================================= */
 
@@ -3952,6 +4179,7 @@ function activeFilesB8(ignoreFilters = false) { return activeFiles(ignoreFilters
 function activeFilesB1(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b1'); }
 function activeFilesB4(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b4'); }
 function activeFilesB6(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b6'); }
+function activeFilesB7(ignoreFilters = false) { return activeFiles(ignoreFilters).filter(f => f.fileType === 'b7'); }
 
 // Vista unificada del dashboard: cuotas de fondos de inversión (CFI), tanto
 // nacionales (B.2) como administradas por AGFs chilenas con activos en el
