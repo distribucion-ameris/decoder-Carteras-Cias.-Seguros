@@ -10472,9 +10472,14 @@ function setupTabs() {
 }
 
 function renderActiveTab() {
-  const active = document.querySelector('.tab.active');
-  if (!active) return;
-  switch (active.dataset.tab) {
+  // Determinamos la pestaña activa por el PANEL (no por el botón). Los items
+  // del dropdown 'Fondos de inversión' no marcan .active en sí mismos (solo
+  // el trigger del dropdown lo hace, pero el trigger no tiene data-tab).
+  // El panel activo siempre tiene id='tab-{tabId}' — derivamos tabId de ahí.
+  const activePanel = document.querySelector('.tab-panel.active');
+  if (!activePanel) return;
+  const tabId = (activePanel.id || '').replace(/^tab-/, '');
+  switch (tabId) {
     case 'general':     renderGeneral(); break;
     case 'agf':         renderAGF(); break;
     case 'insurer':     renderInsurer(); break;
