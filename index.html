@@ -8321,10 +8321,11 @@ function renderTopDownN3(rut, clase) {
   if (clase === 'b1') return renderTopDownN3_RentaFija(rut, ciaName);
   if (clase === 'b2') return renderTopDownN3_CFI(rut, ciaName);
   if (clase === 'b4') return renderTopDownN3_BR(rut, ciaName);
+  if (clase === 'b5') return renderTopDownN3_Extranjero(rut, ciaName);
 
   // Placeholder para clases futuras
   const claseLabels = {
-    b5: 'Extranjero', b6: 'Otras + Alternativos', b7: 'Derivados',
+    b6: 'Otras + Alternativos', b7: 'Derivados',
   };
   return `
     <div style="padding:24px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px">
@@ -8938,6 +8939,282 @@ function renderTopDownN3_BR(rut, ciaName) {
   `;
 }
 
+// Nivel 3 · Extranjero (B.5). Toma el último B.5 cargado de la cía. y muestra
+// KPIs, distribución deuda vs cuotas + por país + por moneda, top países,
+// top emisores/administradores, top instrumentos individuales.
+function renderTopDownN3_Extranjero(rut, ciaName) {
+  const all = activeFiles().filter(f => f.insurerRut === rut && f.fileType === 'b5');
+  if (all.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">Sin archivo B.5 cargado para ${escapeHtml(ciaName)}.</div>`;
+  }
+  const lastB5 = all.reduce((a, b) => a.periodo > b.periodo ? a : b);
+  const records = Array.isArray(lastB5.b5Records) ? lastB5.b5Records : [];
+  if (records.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">El B.5 cargado no tiene posiciones.</div>`;
+  }
+
+  // Separar por subtipo
+  const deudas = records.filter(r => r._subtype === 'deuda');
+  const cuotas = records.filter(r => r._subtype === 'cuota');
+  const totalCLP = records.reduce((s, r) => s + (r.valorFinal || 0), 0);
+  const totalDeuda = deudas.reduce((s, r) => s + (r.valorFinal || 0), 0);
+  const totalCuotas = cuotas.reduce((s, r) => s + (r.valorFinal || 0), 0);
+  const pctDeuda = totalCLP > 0 ? (totalDeuda / totalCLP * 100) : 0;
+  const pctCuotas = totalCLP > 0 ? (totalCuotas / totalCLP * 100) : 0;
+
+  // Mapas de país y moneda — heurísticas legibles
+  const paisLabels = {
+    CL:'Chile', US:'Estados Unidos', BR:'Brasil', MX:'México', PE:'Perú',
+    CO:'Colombia', AR:'Argentina', CA:'Canadá', GB:'Reino Unido', DE:'Alemania',
+    FR:'Francia', ES:'España', IT:'Italia', NL:'Países Bajos', LU:'Luxemburgo',
+    IE:'Irlanda', CH:'Suiza', JP:'Japón', CN:'China', IN:'India',
+    AU:'Australia', KR:'Corea del Sur', ZA:'Sudáfrica', RU:'Rusia',
+    SG:'Singapur', HK:'Hong Kong', BE:'Bélgica', SE:'Suecia', NO:'Noruega',
+    DK:'Dinamarca', FI:'Finlandia', AT:'Austria', PT:'Portugal', GR:'Grecia',
+  };
+
+  // Por país
+  const byPais = new Map();
+  for (const r of records) {
+    const p = (r.pais || '').trim() || '—';
+    const cur = byPais.get(p) || { pais: p, label: paisLabels[p] || p, total: 0, n: 0 };
+    cur.total += r.valorFinal || 0;
+    cur.n += 1;
+    byPais.set(p, cur);
+  }
+  const topPaises = Array.from(byPais.values()).filter(p => p.total > 0).sort((a, b) => b.total - a.total).slice(0, 15);
+
+  // Por moneda
+  const byMoneda = new Map();
+  for (const r of records) {
+    const m = (r.moneda || '').trim() || '—';
+    const cur = byMoneda.get(m) || { moneda: m, total: 0, n: 0 };
+    cur.total += r.valorFinal || 0;
+    cur.n += 1;
+    byMoneda.set(m, cur);
+  }
+  const topMonedas = Array.from(byMoneda.values()).filter(m => m.total > 0).sort((a, b) => b.total - a.total);
+
+  // Top emisores / administradores
+  // Para deuda: nombreEmisor (puede traer issuer extranjero ej. "UNITED STATES TREASURY").
+  // Para cuotas: si tiene rutAdm (administradora chilena), usar canonicalAgfName;
+  //   si no, nombreEmisor (fondo internacional como BlackRock, JPM, etc.).
+  const byEmisor = new Map();
+  for (const r of records) {
+    let nombre = '';
+    if (r._subtype === 'cuota' && r.rutAdm) {
+      nombre = canonicalAgfName(r.rutAdm);
+      // Si canonicalAgfName devuelve '(RUT XX)' no mapeado, caer al nombreEmisor
+      if (/^\(RUT /.test(nombre)) nombre = r.nombreEmisor || nombre;
+    } else {
+      nombre = r.nombreEmisor || '(sin emisor)';
+    }
+    const cur = byEmisor.get(nombre) || { nombre, total: 0, n: 0, subtipos: new Set() };
+    cur.total += r.valorFinal || 0;
+    cur.n += 1;
+    cur.subtipos.add(r._subtype);
+    byEmisor.set(nombre, cur);
+  }
+  const topEmisores = Array.from(byEmisor.values()).filter(e => e.total > 0).sort((a, b) => b.total - a.total).slice(0, 15);
+
+  // Top instrumentos individuales
+  const topInstrumentos = records.slice().sort((a, b) => (b.valorFinal || 0) - (a.valorFinal || 0)).slice(0, 20);
+
+  // Helper de fila de distribución
+  const distRow = (label, val, total, sublabel, color) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:200px 1fr 60px 130px">
+        <span class="ic-dist-name" style="color:${color || 'var(--c-ameris-navy)'}">${escapeHtml(label)}${sublabel ? `<div style="font-size:10.5px;color:var(--c-muted);font-weight:400">${escapeHtml(sublabel)}</div>` : ''}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color || 'var(--c-ameris-blue)'}"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(val)}</span>
+      </div>
+    `;
+  };
+
+  // Filas por subtipo
+  const subtipoRows = [
+    distRow('Deuda extranjera', totalDeuda, totalCLP, `${deudas.length} bonos`, '#2E75B6'),
+    distRow('Cuotas / acciones extranjeras', totalCuotas, totalCLP, `${cuotas.length} posiciones`, '#A9D18E'),
+  ].join('');
+
+  // Filas por país (visualmente top 10, los demás agrupados como 'Otros' si hay)
+  const paisesParaDist = byPais.size <= 10
+    ? Array.from(byPais.values()).filter(p => p.total > 0).sort((a, b) => b.total - a.total)
+    : (() => {
+        const sorted = Array.from(byPais.values()).filter(p => p.total > 0).sort((a, b) => b.total - a.total);
+        const top10 = sorted.slice(0, 10);
+        const otros = sorted.slice(10);
+        if (otros.length > 0) {
+          const otrosTotal = otros.reduce((s, p) => s + p.total, 0);
+          const otrosN = otros.reduce((s, p) => s + p.n, 0);
+          top10.push({ pais: 'OTROS', label: `Otros ${otros.length} países`, total: otrosTotal, n: otrosN });
+        }
+        return top10;
+      })();
+  const paisDistRows = paisesParaDist.map(p =>
+    distRow(p.label, p.total, totalCLP, `${p.n} instr.`, p.pais === 'OTROS' ? '#9CA3AF' : '#1F4E79')
+  ).join('');
+
+  // Filas por moneda (top 10 + Otros si aplica)
+  const monedasParaDist = topMonedas.length <= 10
+    ? topMonedas
+    : (() => {
+        const top10 = topMonedas.slice(0, 10);
+        const otrosTotal = topMonedas.slice(10).reduce((s, m) => s + m.total, 0);
+        const otrosN = topMonedas.slice(10).reduce((s, m) => s + m.n, 0);
+        if (otrosTotal > 0) top10.push({ moneda: 'OTROS', total: otrosTotal, n: otrosN });
+        return top10;
+      })();
+  const monedaDistRows = monedasParaDist.map(m => {
+    const label = m.moneda === 'OTROS' ? `Otras ${topMonedas.length - 10} monedas` : m.moneda;
+    return distRow(label, m.total, totalCLP, `${m.n} instr.`, m.moneda === 'USD' ? '#047857' : m.moneda === 'EUR' ? '#7030A0' : '#0EA5E9');
+  }).join('');
+
+  // Tabla top países
+  const paisTableRows = topPaises.map((p, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td>
+        <strong>${escapeHtml(p.label)}</strong>
+        ${p.label !== p.pais ? `<span style="color:var(--c-muted);font-size:11px;margin-left:6px">(${escapeHtml(p.pais)})</span>` : ''}
+        <div style="color:var(--c-muted);font-size:11px">${p.n} instrumento${p.n !== 1 ? 's' : ''}</div>
+      </td>
+      <td class="num">${fmtMoney(p.total)}</td>
+      <td class="num">${totalCLP > 0 ? (p.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  // Tabla top emisores / admins
+  const emisorTableRows = topEmisores.map((e, i) => {
+    const subtipoLabel = e.subtipos.size === 2 ? 'deuda + cuotas' : (e.subtipos.has('deuda') ? 'deuda' : 'cuotas');
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(e.nombre)}</strong>
+          <div style="color:var(--c-muted);font-size:11px">${e.n} instrumento${e.n !== 1 ? 's' : ''} · ${subtipoLabel}</div>
+        </td>
+        <td class="num">${fmtMoney(e.total)}</td>
+        <td class="num">${totalCLP > 0 ? (e.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Tabla top instrumentos individuales
+  const instrumentoRows = topInstrumentos.map((r, i) => {
+    const isCuota = r._subtype === 'cuota';
+    const subtipoBadge = isCuota
+      ? '<span style="color:#A9D18E;font-weight:600">Cuota / Acción</span>'
+      : '<span style="color:#2E75B6;font-weight:600">Deuda</span>';
+    const subInfo = isCuota
+      ? (r.nombreFondo || r.nombreEmisor || '—')
+      : (r.nombreEmisor || '—');
+    const fechaVto = r.fechaVencimiento && r.fechaVencimiento.length === 8
+      ? `${r.fechaVencimiento.slice(0,4)}-${r.fechaVencimiento.slice(4,6)}-${r.fechaVencimiento.slice(6,8)}`
+      : '';
+    const extra = r._subtype === 'deuda' && fechaVto ? ` · vto ${fechaVto}` : '';
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(r.nemo || '(sin nemo)')}</strong>
+          ${r.serie ? `<span style="color:var(--c-muted);font-size:11px;margin-left:6px">Serie ${escapeHtml(r.serie)}</span>` : ''}
+          <div style="color:var(--c-muted);font-size:11px">${escapeHtml(subInfo)}</div>
+          <div style="color:var(--c-muted);font-size:11px">${subtipoBadge} · ${escapeHtml(paisLabels[r.pais] || r.pais || '—')} · ${escapeHtml(r.moneda || '—')}${extra}</div>
+        </td>
+        <td class="num">${fmtMoney(r.valorFinal || 0)}</td>
+        <td class="num">${totalCLP > 0 ? ((r.valorFinal || 0) / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
+      <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · Extranjero</strong>
+      · Cierre ${fmtPeriod(lastB5.periodo)} · Archivo B.5 con ${records.length.toLocaleString('es-CL')} instrumentos
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0">
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">AUM extranjero</div>
+        <div style="font-size:20px;font-weight:700;color:var(--c-ameris-blue)">${fmtMoney(totalCLP)}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">N° Instrumentos</div>
+        <div style="font-size:20px;font-weight:700">${records.length.toLocaleString('es-CL')}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${deudas.length} deuda · ${cuotas.length} cuotas</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">% Deuda vs % Cuotas</div>
+        <div style="font-size:20px;font-weight:700">${pctDeuda.toFixed(1)}% / ${pctCuotas.toFixed(1)}%</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Países / Monedas</div>
+        <div style="font-size:20px;font-weight:700">${byPais.size} / ${byMoneda.size}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${byEmisor.size} emisores/admins distintos</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">Composición · Deuda vs Cuotas / Acciones</div></div>
+      <div style="padding:14px 18px">
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">Deuda = bonos soberanos / corporativos extranjeros. Cuotas / Acciones = ETFs, fondos internacionales, ADRs y acciones extranjeras (incluyendo fondos chilenos que invierten en el exterior).</div>
+        <div class="ic-dist-list">${subtipoRows}</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="gap:14px;margin-top:14px">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por país</div></div>
+        <div style="padding:14px 18px">
+          <div class="ic-dist-list">${paisDistRows}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por moneda</div></div>
+        <div style="padding:14px 18px">
+          <div class="ic-dist-list">${monedaDistRows}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 países por exposición</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>País</th><th class="num">Exposición</th><th class="num">% B.5 total</th></tr></thead>
+          <tbody>${paisTableRows}</tbody>
+        </table>
+      </div>
+      ${byPais.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byPais.size} países.</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 emisores / administradores</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Emisor / Administrador</th><th class="num">Exposición</th><th class="num">% B.5 total</th></tr></thead>
+          <tbody>${emisorTableRows}</tbody>
+        </table>
+      </div>
+      ${byEmisor.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byEmisor.size} emisores/admins.</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 20 instrumentos individuales</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Instrumento</th><th class="num">Exposición</th><th class="num">% B.5 total</th></tr></thead>
+          <tbody>${instrumentoRows}</tbody>
+        </table>
+      </div>
+      ${records.length > 20 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 20 de ${records.length.toLocaleString('es-CL')} instrumentos.</div>` : ''}
+    </div>
+  `;
+}
+
 // Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
 // B.8 manda como fuente de verdad si está cargado. Si no, se suman los
 // archivos detalle disponibles (con banner indicando fallback).
@@ -9135,7 +9412,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
   // construcción — mostramos un indicador visual claro de ambos estados.
   const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
-  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4']);  // ampliar cuando se sumen B.6/B.7/etc.
+  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5']);  // ampliar cuando se sumen B.6/B.7
   const archivoRows = cart.archivos.map(a => {
     const clase = tipoToClase[a.tipo];
     const isReady = a.presente && clase && CLASES_LISTAS.has(clase);
