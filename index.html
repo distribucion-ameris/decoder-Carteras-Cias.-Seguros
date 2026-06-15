@@ -8512,15 +8512,22 @@ function renderTopDownN3_CFI(rut, ciaName) {
     return `<div style="padding:24px;color:var(--c-muted)">El B.2 cargado no tiene posiciones.</div>`;
   }
 
-  // Helpers: distinguir CFI (cuotas de fondos) vs ACC (acciones)
+  // Clasificación explícita:
+  //   CFI*       → Cuotas FFII (fondos de inversión nacionales)
+  //   ACC / ACCR → Acciones nacionales (abiertas / restringidas)
+  //   resto      → 'Otros' (no esperado, pero capturado para no perder datos)
   const isCFI = h => (h.tipoInst || '').startsWith('CFI');
+  const isACC = h => { const t = (h.tipoInst || '').trim(); return t === 'ACC' || t === 'ACCR'; };
   const cfis = holdings.filter(isCFI);
-  const accs = holdings.filter(h => !isCFI(h));
+  const accs = holdings.filter(isACC);
+  const otros = holdings.filter(h => !isCFI(h) && !isACC(h));
   const totalCLP = holdings.reduce((s, h) => s + (h.valLibro || 0), 0);
   const totalCFI = cfis.reduce((s, h) => s + (h.valLibro || 0), 0);
   const totalACC = accs.reduce((s, h) => s + (h.valLibro || 0), 0);
+  const totalOtros = otros.reduce((s, h) => s + (h.valLibro || 0), 0);
   const pctCFI = totalCLP > 0 ? (totalCFI / totalCLP * 100) : 0;
   const pctACC = totalCLP > 0 ? (totalACC / totalCLP * 100) : 0;
+  const pctOtros = totalCLP > 0 ? (totalOtros / totalCLP * 100) : 0;
 
   // Por AGF administradora (canonicalAgfRut + canonicalAgfName)
   const byAgf = new Map();
@@ -8539,7 +8546,8 @@ function renderTopDownN3_CFI(rut, ciaName) {
     .filter(a => a.total > 0)
     .sort((a, b) => b.total - a.total);
 
-  // Top fondos individuales (nemo + serie)
+  // Top fondos individuales — UN bucket por (nemo, serie). Ordenado luego en
+  // dos listas: solo CFI y solo Acciones, así no se mezclan visualmente.
   const byFondo = new Map();
   for (const h of holdings) {
     const k = (h.nemo || '') + '||' + (h.serie || '');
@@ -8550,15 +8558,15 @@ function renderTopDownN3_CFI(rut, ciaName) {
       total: 0, unidades: 0,
       tipoInst: h.tipoInst,
       isCFI: isCFI(h),
+      isACC: isACC(h),
     };
     cur.total += h.valLibro || 0;
     cur.unidades += h.unidades || 0;
     byFondo.set(k, cur);
   }
-  const topFondos = Array.from(byFondo.values())
-    .filter(f => f.total > 0)
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 15);
+  const allFondos = Array.from(byFondo.values()).filter(f => f.total > 0);
+  const topCFI = allFondos.filter(f => f.isCFI).sort((a, b) => b.total - a.total).slice(0, 15);
+  const topACC = allFondos.filter(f => f.isACC).sort((a, b) => b.total - a.total).slice(0, 15);
 
   // Distribución por categoría (CFI vs ACC)
   const distRow = (label, val, total, sublabel, color) => {
@@ -8575,6 +8583,7 @@ function renderTopDownN3_CFI(rut, ciaName) {
   const catRows = [
     distRow('CFI · Cuotas de fondos', totalCFI, totalCLP, `${cfis.length} posiciones`, '#375623'),
     distRow('ACC · Acciones nacionales', totalACC, totalCLP, `${accs.length} posiciones`, '#833C00'),
+    ...(otros.length > 0 ? [distRow('Otros', totalOtros, totalCLP, `${otros.length} posiciones (${[...new Set(otros.map(h => h.tipoInst))].join(', ')})`, '#7F7F7F')] : []),
   ].join('');
 
   // Top AGFs
@@ -8590,19 +8599,21 @@ function renderTopDownN3_CFI(rut, ciaName) {
     </tr>
   `).join('');
 
-  // Top fondos individuales
-  const fondoRows = topFondos.map((f, i) => `
+  // Renderer compartido para Top CFI y Top Acciones
+  const fondoRowsHTML = (lista) => lista.map((f, i) => `
     <tr>
       <td class="num">${i + 1}</td>
       <td>
         <strong>${escapeHtml(f.friendly || f.nemo)}</strong>
         ${f.serie ? `<span style="color:var(--c-muted);font-size:11px;margin-left:4px">Serie ${escapeHtml(f.serie)}</span>` : ''}
-        <div style="color:var(--c-muted);font-size:11px">${escapeHtml(f.agf)} · ${f.isCFI ? 'CFI' : 'Acción'}${f.unidades ? ' · ' + fmtNumber(f.unidades, 2) + ' unidades' : ''}</div>
+        <div style="color:var(--c-muted);font-size:11px">${escapeHtml(f.agf)} · <span style="color:${f.isCFI ? '#375623' : '#833C00'};font-weight:600">${escapeHtml(f.tipoInst || '—')}</span>${f.unidades ? ' · ' + fmtNumber(f.unidades, 2) + ' unidades' : ''}</div>
       </td>
       <td class="num">${fmtMoney(f.total)}</td>
       <td class="num">${totalCLP > 0 ? (f.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
     </tr>
   `).join('');
+  const cfiRows = fondoRowsHTML(topCFI);
+  const accRows = fondoRowsHTML(topACC);
 
   return `
     <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
@@ -8650,15 +8661,32 @@ function renderTopDownN3_CFI(rut, ciaName) {
       ${agfsSorted.length > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${agfsSorted.length} AGFs únicas.</div>` : ''}
     </div>
 
-    <div class="card" style="margin-top:14px">
-      <div class="card-header"><div class="card-title">Top 15 fondos / acciones individuales</div></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>#</th><th>Fondo / Acción</th><th class="num">Exposición</th><th class="num">% B.2 total</th></tr></thead>
-          <tbody>${fondoRows}</tbody>
-        </table>
-      </div>
-      ${byFondo.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byFondo.size} instrumentos únicos.</div>` : ''}
+    <div class="card" style="margin-top:14px;border-left:4px solid #375623">
+      <div class="card-header"><div class="card-title">Top 15 cuotas de fondos (CFI)</div></div>
+      ${topCFI.length === 0
+        ? '<div style="padding:18px;color:var(--c-muted);font-size:12.5px">Esta compañía no tiene posiciones CFI cargadas en este B.2.</div>'
+        : `<div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Fondo</th><th class="num">Exposición</th><th class="num">% B.2 total</th></tr></thead>
+              <tbody>${cfiRows}</tbody>
+            </table>
+          </div>
+          ${cfis.length > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${topCFI.length === 15 ? cfis.length : topCFI.length} fondos CFI únicos.</div>` : ''}`
+      }
+    </div>
+
+    <div class="card" style="margin-top:14px;border-left:4px solid #833C00">
+      <div class="card-header"><div class="card-title">Top 15 acciones nacionales (ACC / ACCR)</div></div>
+      ${topACC.length === 0
+        ? `<div style="padding:18px;color:var(--c-muted);font-size:12.5px">${escapeHtml(ciaName)} no tiene posiciones en acciones nacionales en este archivo B.2.</div>`
+        : `<div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Acción</th><th class="num">Exposición</th><th class="num">% B.2 total</th></tr></thead>
+              <tbody>${accRows}</tbody>
+            </table>
+          </div>
+          ${accs.length > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${topACC.length === 15 ? accs.length : topACC.length} acciones únicas.</div>` : ''}`
+      }
     </div>
   `;
 }
