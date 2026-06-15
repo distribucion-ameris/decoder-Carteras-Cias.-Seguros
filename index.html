@@ -8386,6 +8386,7 @@ function renderTopDownN3(rut, clase) {
     if (clase === 'b4') return renderTopDownN3_BR(rut, ciaName);
     if (clase === 'b5') return renderTopDownN3_Extranjero(rut, ciaName);
     if (clase === 'b6') return renderTopDownN3_OtrasAlt(rut, ciaName);
+    if (clase === 'b7') return renderTopDownN3_Derivados(rut, ciaName);
   } catch (err) {
     console.error('renderTopDownN3 error:', clase, err);
     return `
@@ -8397,9 +8398,7 @@ function renderTopDownN3(rut, clase) {
   }
 
   // Placeholder para clases futuras
-  const claseLabels = {
-    b7: 'Derivados',
-  };
+  const claseLabels = {};
   return `
     <div style="padding:24px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px">
       <h3 style="margin:0 0 8px;color:#92400e">🚧 Nivel 3 · ${escapeHtml(claseLabels[clase] || clase)} — en construcción</h3>
@@ -9578,6 +9577,334 @@ function renderTopDownN3_OtrasAlt(rut, ciaName) {
   `;
 }
 
+// Nivel 3 · Derivados (B.7). Toma el último B.7 cargado de la cía. y muestra
+// KPIs (MTM neto, cobertura vs inversión, % a vencer próximo, # contratos),
+// distribución por subtipo (Forward/Swap/Pacto) / tipo de operación / objetivo
+// / moneda / contraparte, vencimientos por año, top contratos por MTM absoluto.
+function renderTopDownN3_Derivados(rut, ciaName) {
+  const all = activeFiles().filter(f => f.insurerRut === rut && f.fileType === 'b7');
+  if (all.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">Sin archivo B.7 cargado para ${escapeHtml(ciaName)}.</div>`;
+  }
+  const lastB7 = all.reduce((a, b) => a.periodo > b.periodo ? a : b);
+  const records = Array.isArray(lastB7.b7Records) ? lastB7.b7Records : [];
+  if (records.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">El B.7 cargado no tiene contratos.</div>`;
+  }
+
+  // KPIs
+  // MTM neto: suma firmada de vrContrato en M$ → CLP
+  const totMTM = records.reduce((s, r) => s + ((r.vrContrato || 0) * 1000), 0);
+  const totAbs = records.reduce((s, r) => s + Math.abs((r.vrContrato || 0) * 1000), 0);
+  const cobRecs = records.filter(r => r.objetivo === 'CBE' || r.objetivo === '1512' || /[Cc]obertura/.test(r.objetivoDesc || ''));
+  const invRecs = records.filter(r => r.objetivo === 'INV' || /[Ii]nversi/.test(r.objetivoDesc || ''));
+  const totCob = cobRecs.reduce((s, r) => s + Math.abs((r.vrContrato || 0) * 1000), 0);
+  const totInv = invRecs.reduce((s, r) => s + Math.abs((r.vrContrato || 0) * 1000), 0);
+  const totMargen = records.reduce((s, r) => s + ((r.margenMS || 0) * 1000), 0);
+  // Próximos a vencer (90 días) — basado en la fecha del periodo del archivo, no en today
+  const periodoDate = lastB7.periodo && lastB7.periodo.length === 6
+    ? new Date(parseInt(lastB7.periodo.slice(0,4),10), parseInt(lastB7.periodo.slice(4,6),10) - 1, 28)
+    : null;
+  let nProxVcto = 0, mtmProxVcto = 0;
+  if (periodoDate) {
+    const limite = new Date(periodoDate.getTime() + 90 * 24 * 3600 * 1000);
+    for (const r of records) {
+      if (!r.fechaVcto) continue;
+      const d = new Date(r.fechaVcto);
+      if (!isFinite(d.getTime())) continue;
+      if (d <= limite) {
+        nProxVcto += 1;
+        mtmProxVcto += Math.abs((r.vrContrato || 0) * 1000);
+      }
+    }
+  }
+
+  // Distribución por subtipo (Forward / Swap / Pacto)
+  const subtipoColors = { 'Forward':'#1F4E79', 'Swap':'#7030A0', 'Pacto':'#BA7517', 'Otros':'#9CA3AF' };
+  const bySub = new Map();
+  for (const r of records) {
+    const k = r.subtipo || 'Otros';
+    const cur = bySub.get(k) || { sub: k, totAbs: 0, totNeto: 0, n: 0 };
+    cur.totAbs += Math.abs((r.vrContrato || 0) * 1000);
+    cur.totNeto += (r.vrContrato || 0) * 1000;
+    cur.n += 1;
+    bySub.set(k, cur);
+  }
+  const subsSorted = Array.from(bySub.values()).filter(s => s.n > 0).sort((a, b) => b.totAbs - a.totAbs);
+
+  // Distribución por tipo de operación (FWC, FWV, IRS, SCS, PVCC...)
+  const byOp = new Map();
+  for (const r of records) {
+    const k = r.tipoOp || '—';
+    const cur = byOp.get(k) || { op: k, desc: r.tipoOpDesc || k, totAbs: 0, n: 0 };
+    cur.totAbs += Math.abs((r.vrContrato || 0) * 1000);
+    cur.n += 1;
+    byOp.set(k, cur);
+  }
+  const opsSorted = Array.from(byOp.values()).filter(o => o.n > 0).sort((a, b) => b.totAbs - a.totAbs).slice(0, 10);
+
+  // Distribución por objetivo (Cobertura vs Inversión)
+  const byObj = new Map();
+  for (const r of records) {
+    const k = r.objetivo || '—';
+    const cur = byObj.get(k) || { obj: k, desc: r.objetivoDesc || k, totAbs: 0, n: 0 };
+    cur.totAbs += Math.abs((r.vrContrato || 0) * 1000);
+    cur.n += 1;
+    byObj.set(k, cur);
+  }
+  const objsSorted = Array.from(byObj.values()).filter(o => o.n > 0).sort((a, b) => b.totAbs - a.totAbs);
+
+  // Distribución por moneda subyacente (combina largo + corto)
+  const byMon = new Map();
+  for (const r of records) {
+    const monedas = new Set();
+    if (r.moneda) monedas.add(r.moneda);
+    if (r.monLargo) monedas.add(r.monLargo);
+    if (r.monCorto) monedas.add(r.monCorto);
+    if (r.aoLargoNom && r.aoLargoNom.length <= 6) monedas.add(r.aoLargoNom);
+    if (r.aoCortoNom && r.aoCortoNom.length <= 6) monedas.add(r.aoCortoNom);
+    if (monedas.size === 0) monedas.add('—');
+    const peso = Math.abs((r.vrContrato || 0) * 1000) / Math.max(monedas.size, 1);
+    for (const m of monedas) {
+      const cur = byMon.get(m) || { mon: m, totAbs: 0, n: 0 };
+      cur.totAbs += peso;
+      cur.n += 1;
+      byMon.set(m, cur);
+    }
+  }
+  const monsSorted = Array.from(byMon.values()).filter(m => m.totAbs > 0).sort((a, b) => b.totAbs - a.totAbs).slice(0, 10);
+
+  // Top contrapartes (por MTM absoluto)
+  const byCp = new Map();
+  for (const r of records) {
+    const k = (r.contraparte || '').trim() || '(sin contraparte)';
+    const cur = byCp.get(k) || { nombre: k, pais: r.paisContraparte || '', totAbs: 0, totNeto: 0, n: 0, relacionado: false };
+    cur.totAbs += Math.abs((r.vrContrato || 0) * 1000);
+    cur.totNeto += (r.vrContrato || 0) * 1000;
+    cur.n += 1;
+    if (r.relacionado && /^[SsYy1]/.test(r.relacionado)) cur.relacionado = true;
+    byCp.set(k, cur);
+  }
+  const topCp = Array.from(byCp.values()).sort((a, b) => b.totAbs - a.totAbs).slice(0, 15);
+
+  // Vencimientos por año (los siguientes 6 años)
+  const byYr = new Map();
+  let sinFecha = 0;
+  for (const r of records) {
+    if (!r.fechaVcto) { sinFecha += 1; continue; }
+    const yr = r.fechaVcto.slice(0, 4);
+    const cur = byYr.get(yr) || { year: yr, n: 0, totAbs: 0 };
+    cur.n += 1;
+    cur.totAbs += Math.abs((r.vrContrato || 0) * 1000);
+    byYr.set(yr, cur);
+  }
+  const yrsSorted = Array.from(byYr.values()).sort((a, b) => a.year.localeCompare(b.year));
+
+  // Top contratos individuales por MTM absoluto
+  const topContratos = records.slice().sort((a, b) =>
+    Math.abs((b.vrContrato || 0)) - Math.abs((a.vrContrato || 0))
+  ).slice(0, 20);
+
+  // Helper para filas de distribución (usa totAbs como referencia)
+  const distRow = (label, val, total, sublabel, color) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:230px 1fr 60px 130px">
+        <span class="ic-dist-name" style="color:${color || 'var(--c-ameris-navy)'}">${escapeHtml(label)}${sublabel ? `<div style="font-size:10.5px;color:var(--c-muted);font-weight:400">${escapeHtml(sublabel)}</div>` : ''}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color || 'var(--c-ameris-blue)'}"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(val)}</span>
+      </div>
+    `;
+  };
+
+  const subRows = subsSorted.map(s => distRow(
+    s.sub, s.totAbs, totAbs,
+    `${s.n} contrato${s.n !== 1 ? 's' : ''} · MTM neto ${fmtMoney(s.totNeto)}`,
+    subtipoColors[s.sub] || '#7F7F7F'
+  )).join('');
+  const opRows = opsSorted.map(o => distRow(
+    `${o.desc} (${o.op})`, o.totAbs, totAbs, `${o.n} contrato${o.n !== 1 ? 's' : ''}`
+  )).join('');
+  const objRows = objsSorted.map(o => distRow(
+    `${o.desc} (${o.obj})`, o.totAbs, totAbs, `${o.n} contrato${o.n !== 1 ? 's' : ''}`,
+    o.obj === 'INV' ? '#dc2626' : '#10B981'
+  )).join('');
+  const monRows = monsSorted.map(m => distRow(
+    nombreMoneda(m.mon) !== m.mon ? `${m.mon} · ${nombreMoneda(m.mon)}` : m.mon,
+    m.totAbs, totAbs, `${m.n} apariciones`
+  )).join('');
+
+  // Top contrapartes
+  const cpRows = topCp.map((c, i) => {
+    const paisLbl = c.pais ? paisName(c.pais) : '';
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(c.nombre)}</strong>
+          ${c.relacionado ? `<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px">RELACIONADO</span>` : ''}
+          <div style="color:var(--c-muted);font-size:11px">${paisLbl ? escapeHtml(paisLbl) : '—'} · ${c.n} contrato${c.n !== 1 ? 's' : ''}</div>
+        </td>
+        <td class="num">${fmtMoney(c.totAbs)}</td>
+        <td class="num" style="color:${c.totNeto >= 0 ? '#047857' : '#dc2626'}">${fmtMoney(c.totNeto)}</td>
+        <td class="num">${totAbs > 0 ? (c.totAbs / totAbs * 100).toFixed(2) : '0.00'}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Vencimientos por año
+  const maxYr = yrsSorted.reduce((m, y) => Math.max(m, y.n), 0);
+  const yrRows = yrsSorted.map(y => {
+    const pctN = maxYr > 0 ? (y.n / maxYr * 100) : 0;
+    return `
+      <div style="display:grid;grid-template-columns:70px 1fr 90px 140px;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0f2f8;font-size:12px">
+        <span style="font-weight:600;color:var(--c-ameris-navy)">${escapeHtml(y.year)}</span>
+        <div style="height:6px;background:#f0f2f8;border-radius:3px;overflow:hidden"><div style="width:${pctN.toFixed(1)}%;height:100%;background:var(--c-ameris-blue)"></div></div>
+        <span class="num">${y.n} contr.</span>
+        <span class="num">${fmtMoney(y.totAbs)}</span>
+      </div>
+    `;
+  }).join('');
+
+  // Top contratos individuales
+  const contratoRows = topContratos.map((r, i) => {
+    const mtmCLP = (r.vrContrato || 0) * 1000;
+    const subyacente = [];
+    if (r.aoLargoNom) subyacente.push(`L: ${r.aoLargoNom}`);
+    if (r.aoCortoNom) subyacente.push(`C: ${r.aoCortoNom}`);
+    if (r.serie) subyacente.push(`Serie: ${r.serie}`);
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(r.tipoOpDesc || r.tipoOp || '—')}</strong>
+          <span style="background:#e0e7ff;color:#3730a3;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:6px">${escapeHtml(r.subtipo || '—')}</span>
+          <div style="color:var(--c-muted);font-size:11px">
+            ${escapeHtml(r.contraparte || '—')}${r.fechaVcto ? ` · vence ${escapeHtml(r.fechaVcto)}` : ''}
+          </div>
+          <div style="color:var(--c-muted);font-size:11px">${escapeHtml(subyacente.join(' · ') || '—')}</div>
+        </td>
+        <td class="num" style="color:${mtmCLP >= 0 ? '#047857' : '#dc2626'};font-weight:600">${fmtMoney(mtmCLP)}</td>
+        <td class="num">${escapeHtml(r.objetivoDesc || r.objetivo || '—')}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#FDF4FF 100%);border-color:#7030A0">
+      <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · Derivados</strong>
+      · Cierre ${fmtPeriod(lastB7.periodo)} · Archivo B.7 con ${records.length.toLocaleString('es-CL')} contrato${records.length !== 1 ? 's' : ''}
+    </div>
+
+    <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;border-radius:4px;margin:14px 0;font-size:12px;color:#78350f">
+      <strong>¿Qué muestra esta vista?</strong> El MTM (mark-to-market) de cada contrato refleja su valor económico al cierre del período. Positivo = a favor de la cía. (activo); negativo = en contra (pasivo). Para distribuciones usamos <strong>valor absoluto</strong> (tamaño de la exposición); el "MTM neto" en KPIs y contrapartes mantiene el signo.
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:14px 0">
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">MTM neto</div>
+        <div style="font-size:20px;font-weight:700;color:${totMTM >= 0 ? '#047857' : '#dc2626'}">${fmtMoney(totMTM)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">Exposición abs: ${fmtMoney(totAbs)}</div>
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:#166534;text-transform:uppercase;letter-spacing:0.3px">Cobertura</div>
+        <div style="font-size:20px;font-weight:700;color:#10B981">${fmtMoney(totCob)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${cobRecs.length} contr. · ${totAbs > 0 ? (totCob / totAbs * 100).toFixed(1) : '0'}%</div>
+      </div>
+      <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:#991b1b;text-transform:uppercase;letter-spacing:0.3px">Inversión</div>
+        <div style="font-size:20px;font-weight:700;color:#dc2626">${fmtMoney(totInv)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${invRecs.length} contr. · ${totAbs > 0 ? (totInv / totAbs * 100).toFixed(1) : '0'}%</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">N° contratos</div>
+        <div style="font-size:20px;font-weight:700">${records.length.toLocaleString('es-CL')}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${byCp.size} contraparte${byCp.size !== 1 ? 's' : ''}</div>
+      </div>
+      <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:#92400e;text-transform:uppercase;letter-spacing:0.3px">Vencen ≤90d</div>
+        <div style="font-size:20px;font-weight:700;color:#BA7517">${nProxVcto.toLocaleString('es-CL')}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${fmtMoney(mtmProxVcto)}</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="gap:14px">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por subtipo</div></div>
+        <div style="padding:14px 18px">
+          <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px"><strong>Forward</strong> = contrato a plazo (más común para cobertura de moneda). <strong>Swap</strong> = intercambio de flujos (IRS, CCS). <strong>Pacto</strong> = compromiso de compra/venta con retrocompra (financiamiento).</div>
+          <div class="ic-dist-list">${subRows}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por objetivo</div></div>
+        <div style="padding:14px 18px">
+          <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px"><strong>Cobertura (CBE)</strong> = mitigar riesgo de tasa/moneda. <strong>1512</strong> = cobertura específica para calce de pasivos. <strong>Inversión (INV)</strong> = posición especulativa (perfil de riesgo distinto).</div>
+          <div class="ic-dist-list">${objRows}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="gap:14px;margin-top:14px">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Top 10 tipos de operación</div></div>
+        <div style="padding:14px 18px">
+          <div class="ic-dist-list">${opRows || '<div style="color:var(--c-muted);font-size:12px">Sin datos.</div>'}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Top 10 monedas subyacentes</div></div>
+        <div style="padding:14px 18px">
+          <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">Suma las monedas que aparecen como subyacente largo o corto. Un swap CLP/USD aparece en ambos.</div>
+          <div class="ic-dist-list">${monRows || '<div style="color:var(--c-muted);font-size:12px">Sin datos.</div>'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Vencimientos por año</div></div>
+      <div style="padding:14px 18px">
+        ${yrsSorted.length === 0
+          ? '<div style="color:var(--c-muted);font-size:12px">Sin fechas de vencimiento.</div>'
+          : yrRows + (sinFecha > 0 ? `<div style="font-size:11.5px;color:var(--c-muted);margin-top:8px">+${sinFecha} contrato${sinFecha !== 1 ? 's' : ''} sin fecha de vencimiento.</div>` : '')
+        }
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 contrapartes</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>Contraparte</th>
+            <th class="num" title="Suma absoluta del MTM — tamaño de la exposición sin importar el signo">Exposición abs</th>
+            <th class="num" title="Suma con signo — positivo = a favor de la cía. al cierre">MTM neto</th>
+            <th class="num">% B.7 abs</th>
+          </tr></thead>
+          <tbody>${cpRows}</tbody>
+        </table>
+      </div>
+      ${byCp.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byCp.size} contrapartes únicas.</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 20 contratos por MTM absoluto</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>Contrato</th>
+            <th class="num">MTM (CLP)</th>
+            <th class="num">Objetivo</th>
+          </tr></thead>
+          <tbody>${contratoRows}</tbody>
+        </table>
+      </div>
+      ${records.length > 20 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 20 de ${records.length.toLocaleString('es-CL')} contratos.</div>` : ''}
+    </div>
+  `;
+}
+
 // Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
 // B.8 manda como fuente de verdad si está cargado. Si no, se suman los
 // archivos detalle disponibles (con banner indicando fallback).
@@ -9775,7 +10102,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
   // construcción — mostramos un indicador visual claro de ambos estados.
   const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
-  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5', 'b6']);  // ampliar cuando se sume B.7
+  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5', 'b6', 'b7']);
   const archivoRows = cart.archivos.map(a => {
     const clase = tipoToClase[a.tipo];
     const isReady = a.presente && clase && CLASES_LISTAS.has(clase);
