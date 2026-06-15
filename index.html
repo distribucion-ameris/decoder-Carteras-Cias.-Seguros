@@ -2504,6 +2504,68 @@ function parseB5Detail3(line) {
   };
 }
 
+// Mapa global de códigos de país → nombre legible. Cobertura completa de
+// los códigos que aparecen en los archivos CMF cargados (B.1, B.5, B.7).
+// Mayormente ISO 3166-1 alpha-2, más algunos códigos no estándar CMF
+// (ej. 'IG' = Internacional / Global, usado para emisores multinacionales
+// o fondos sin país único como Principal Global Investors).
+const COD_PAIS_NAME = {
+  // Americas
+  CL:'Chile', AR:'Argentina', BO:'Bolivia', BR:'Brasil', CA:'Canadá',
+  CO:'Colombia', CR:'Costa Rica', CU:'Cuba', DO:'Rep. Dominicana',
+  EC:'Ecuador', SV:'El Salvador', GT:'Guatemala', HT:'Haití', HN:'Honduras',
+  JM:'Jamaica', MX:'México', NI:'Nicaragua', PA:'Panamá', PY:'Paraguay',
+  PE:'Perú', PR:'Puerto Rico', US:'Estados Unidos', UY:'Uruguay', VE:'Venezuela',
+  // Paraísos fiscales / centros financieros (Caribe + offshore)
+  KY:'Islas Caimán', BM:'Bermuda', BS:'Bahamas', BB:'Barbados',
+  VG:'Islas Vírgenes Británicas', VI:'Islas Vírgenes (US)',
+  TC:'Islas Turcas y Caicos', AI:'Anguila', AG:'Antigua y Barbuda',
+  DM:'Dominica', GD:'Granada', KN:'San Cristóbal y Nieves',
+  LC:'Santa Lucía', VC:'San Vicente', TT:'Trinidad y Tobago',
+  // Europa
+  GB:'Reino Unido', IE:'Irlanda', LU:'Luxemburgo', DE:'Alemania',
+  FR:'Francia', ES:'España', PT:'Portugal', IT:'Italia', NL:'Países Bajos',
+  BE:'Bélgica', CH:'Suiza', AT:'Austria', GR:'Grecia', SE:'Suecia',
+  NO:'Noruega', DK:'Dinamarca', FI:'Finlandia', IS:'Islandia',
+  PL:'Polonia', CZ:'República Checa', SK:'Eslovaquia', HU:'Hungría',
+  RO:'Rumania', BG:'Bulgaria', HR:'Croacia', SI:'Eslovenia',
+  EE:'Estonia', LV:'Letonia', LT:'Lituania', UA:'Ucrania',
+  BY:'Bielorrusia', MD:'Moldavia', RS:'Serbia', BA:'Bosnia',
+  MK:'Macedonia del Norte', AL:'Albania', ME:'Montenegro',
+  MT:'Malta', CY:'Chipre', JE:'Jersey', GG:'Guernsey', IM:'Isla de Man',
+  MC:'Mónaco', AD:'Andorra', LI:'Liechtenstein', SM:'San Marino', VA:'Vaticano',
+  // Asia
+  JP:'Japón', CN:'China', HK:'Hong Kong', TW:'Taiwán', KR:'Corea del Sur',
+  IN:'India', ID:'Indonesia', MY:'Malasia', SG:'Singapur', TH:'Tailandia',
+  PH:'Filipinas', VN:'Vietnam', PK:'Pakistán', BD:'Bangladesh',
+  LK:'Sri Lanka', NP:'Nepal', MM:'Myanmar', KH:'Camboya', LA:'Laos',
+  MN:'Mongolia', KZ:'Kazajistán', UZ:'Uzbekistán',
+  // Medio Oriente
+  IL:'Israel', AE:'Emiratos Árabes Unidos', SA:'Arabia Saudita',
+  QA:'Catar', KW:'Kuwait', BH:'Baréin', OM:'Omán', JO:'Jordania',
+  LB:'Líbano', SY:'Siria', IR:'Irán', IQ:'Irak', YE:'Yemen', TR:'Turquía',
+  // África
+  ZA:'Sudáfrica', EG:'Egipto', NG:'Nigeria', KE:'Kenia', MA:'Marruecos',
+  TN:'Túnez', DZ:'Argelia', LY:'Libia', GH:'Ghana', ET:'Etiopía',
+  TZ:'Tanzania', UG:'Uganda', AO:'Angola', MZ:'Mozambique',
+  MU:'Mauricio', SC:'Seychelles', SN:'Senegal', CI:'Costa de Marfil',
+  // Oceanía
+  AU:'Australia', NZ:'Nueva Zelanda', FJ:'Fiji', PG:'Papúa Nueva Guinea',
+  // Rusia y región
+  RU:'Rusia', AM:'Armenia', AZ:'Azerbaiyán', GE:'Georgia',
+  // Códigos no estándar CMF
+  IG:'Internacional / Global',
+  EU:'Unión Europea',
+};
+// Helper: devuelve nombre legible. Si el código no está mapeado, retorna el
+// código tal cual (no se rompe — el usuario sigue viendo algo).
+function paisName(code) {
+  if (!code) return '—';
+  const k = String(code).trim().toUpperCase();
+  if (!k) return '—';
+  return COD_PAIS_NAME[k] || k;
+}
+
 // Mapa de códigos de moneda CMF → nombre completo + país/región. Usado al
 // mostrar la "Distribución por moneda" para que el usuario entienda qué
 // significa cada código (PROM, $$, UF y similares son convenciones internas
@@ -7351,7 +7413,7 @@ function renderExtranjero() {
   const paisList = Array.from(byPais.values()).sort((a, b) => b.valor - a.valor).slice(0, 15);
   const paisRows = paisList.map(p => `
     <tr>
-      <td><span class="badge" style="background:#e0e7ff;color:#3730a3">${escapeHtml(p.pais)}</span></td>
+      <td><strong>${escapeHtml(paisName(p.pais))}</strong>${p.pais !== paisName(p.pais) ? `<span style="color:var(--c-muted);font-size:11px;margin-left:6px">(${escapeHtml(p.pais)})</span>` : ''}</td>
       <td class="num">${p.count}</td>
       <td class="num">${fmtMoney(p.valor)}</td>
       <td class="num">${totalAll > 0 ? (p.valor / totalAll * 100).toFixed(1) : '0'}%</td>
@@ -7610,13 +7672,13 @@ function renderExtranjeroDetail(rut) {
 
   function paisCells(list, total, isMoneda) {
     return list.slice(0, 8).map(p => {
-      const fullName = isMoneda ? nombreMoneda(p.key) : null;
-      const showName = isMoneda && fullName !== p.key;
+      const fullName = isMoneda ? nombreMoneda(p.key) : paisName(p.key);
+      const showName = fullName && fullName !== p.key;
       return `
       <div style="display:flex;justify-content:space-between;gap:14px;font-size:11.5px;padding:3px 0;border-bottom:1px solid #f0f2f8">
         <span>
-          <strong>${escapeHtml(p.key)}</strong>
-          ${showName ? `<span style="color:var(--c-muted);font-size:10.5px"> · ${escapeHtml(fullName)}</span>` : ''}
+          <strong>${escapeHtml(showName ? fullName : p.key)}</strong>
+          ${showName ? `<span style="color:var(--c-muted);font-size:10.5px"> · ${escapeHtml(p.key)}</span>` : ''}
           <span style="color:var(--c-muted)"> · ${p.count}</span>
         </span>
         <span>${fmtMoney(p.valor)} <span style="color:var(--c-muted)">(${total > 0 ? (p.valor/total*100).toFixed(1) : '0'}%)</span></span>
@@ -7640,7 +7702,7 @@ function renderExtranjeroDetail(rut) {
             </td>
             <td>${escapeHtml(r.nombreEmisor || '—')}</td>
             <td><span class="badge" style="background:#ede9fe;color:#5b21b6">${escapeHtml(r.tipoInst)}</span></td>
-            <td>${escapeHtml(r.pais || '—')}</td>
+            <td title="${escapeHtml(r.pais || '')}">${escapeHtml(paisName(r.pais))}</td>
             <td>${escapeHtml(r.moneda || '—')}</td>
             <td>${escapeHtml(r.fechaVencimiento ? r.fechaVencimiento.slice(0,4) + '-' + r.fechaVencimiento.slice(4,6) : '—')}</td>
             <td class="num" title="Valor par/facial del bono — capital que el emisor debe devolver al vencimiento. Expresado en ${escapeHtml(nomMoneda || 'la moneda de emisión')}, NO en pesos.">${fmtNumber(r.valorNominal || 0, 2)} <span style="color:var(--c-muted);font-size:10px;font-weight:400">${escapeHtml(nomMoneda)}</span></td>
@@ -7657,7 +7719,7 @@ function renderExtranjeroDetail(rut) {
           <td>${escapeHtml(r.nombreEmisor || '—')}</td>
           <td><span class="badge" style="background:#ede9fe;color:#5b21b6">${escapeHtml(r.tipoInst)}</span></td>
           <td>${escapeHtml(r.category)}</td>
-          <td>${escapeHtml(r.pais || '—')}</td>
+          <td title="${escapeHtml(r.pais || '')}">${escapeHtml(paisName(r.pais))}</td>
           <td>${escapeHtml(r.moneda || '—')}</td>
           <td class="num">${fmtNumber(r.unidades || 0, 2)}</td>
           <td class="num">${fmtMoney(r.valorFinal || 0)}</td>
@@ -7689,7 +7751,7 @@ function renderExtranjeroDetail(rut) {
       <div class="kpi-grid" style="margin-top:10px">
         <div class="kpi kpi-clickable" data-kpi-ext="deuda"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Deuda extranjera</div><div class="value">${fmtMoney(totDeuda)}</div><div class="sublabel">${deuda.length} bonos · ${totAll>0?(totDeuda/totAll*100).toFixed(1):'0'}%</div></div>
         <div class="kpi kpi-clickable" data-kpi-ext="cuotas"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Cuotas / acciones</div><div class="value">${fmtMoney(totCuotas)}</div><div class="sublabel">${cuotas.length} cuotas · ${totAll>0?(totCuotas/totAll*100).toFixed(1):'0'}%</div></div>
-        <div class="kpi kpi-clickable" data-kpi-ext="paises"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Países</div><div class="value">${byPais.length}</div><div class="sublabel">${byPais.slice(0,3).map(p=>p.key).join(', ')}${byPais.length>3?'…':''}</div></div>
+        <div class="kpi kpi-clickable" data-kpi-ext="paises"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Países</div><div class="value">${byPais.length}</div><div class="sublabel">${byPais.slice(0,3).map(p=>paisName(p.key)).join(', ')}${byPais.length>3?'…':''}</div></div>
         <div class="kpi kpi-clickable" data-kpi-ext="monedas"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Monedas</div><div class="value">${byMoneda.length}</div><div class="sublabel">${byMoneda.slice(0,3).map(m=>m.key).join(', ')}${byMoneda.length>3?'…':''}</div></div>
       </div>
 
@@ -8318,14 +8380,25 @@ function renderTopDownN3(rut, clase) {
   }
   const ciaName = cia.insurerName || `(RUT ${fmtRut(rut)})`;
 
-  if (clase === 'b1') return renderTopDownN3_RentaFija(rut, ciaName);
-  if (clase === 'b2') return renderTopDownN3_CFI(rut, ciaName);
-  if (clase === 'b4') return renderTopDownN3_BR(rut, ciaName);
-  if (clase === 'b5') return renderTopDownN3_Extranjero(rut, ciaName);
+  try {
+    if (clase === 'b1') return renderTopDownN3_RentaFija(rut, ciaName);
+    if (clase === 'b2') return renderTopDownN3_CFI(rut, ciaName);
+    if (clase === 'b4') return renderTopDownN3_BR(rut, ciaName);
+    if (clase === 'b5') return renderTopDownN3_Extranjero(rut, ciaName);
+    if (clase === 'b6') return renderTopDownN3_OtrasAlt(rut, ciaName);
+  } catch (err) {
+    console.error('renderTopDownN3 error:', clase, err);
+    return `
+      <div style="padding:24px;background:#fee2e2;border-left:4px solid #dc2626;border-radius:6px">
+        <h3 style="margin:0 0 8px;color:#991b1b">Error al renderizar Nivel 3 · ${escapeHtml(clase.toUpperCase())}</h3>
+        <div style="font-family:monospace;font-size:12px;color:#7f1d1d;white-space:pre-wrap;background:#fff;padding:10px;border-radius:4px">${escapeHtml(String(err && err.stack || err))}</div>
+      </div>
+    `;
+  }
 
   // Placeholder para clases futuras
   const claseLabels = {
-    b6: 'Otras + Alternativos', b7: 'Derivados',
+    b7: 'Derivados',
   };
   return `
     <div style="padding:24px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px">
@@ -8962,58 +9035,9 @@ function renderTopDownN3_Extranjero(rut, ciaName) {
   const pctDeuda = totalCLP > 0 ? (totalDeuda / totalCLP * 100) : 0;
   const pctCuotas = totalCLP > 0 ? (totalCuotas / totalCLP * 100) : 0;
 
-  // Mapa de códigos ISO 3166-1 alpha-2 → nombre legible del país. Cobertura
-  // amplia para inversiones offshore comunes en aseguradoras chilenas:
-  // jurisdicciones de fondos (KY/BM/IE/LU/JE/etc.), Latinoamérica, Asia,
-  // Europa, Norteamérica, África, Oceanía. Si aparece un código no mapeado,
-  // se muestra el código crudo.
-  const paisLabels = {
-    // Americas
-    CL:'Chile', AR:'Argentina', BO:'Bolivia', BR:'Brasil', CA:'Canadá',
-    CO:'Colombia', CR:'Costa Rica', CU:'Cuba', DO:'Rep. Dominicana',
-    EC:'Ecuador', SV:'El Salvador', GT:'Guatemala', HT:'Haití', HN:'Honduras',
-    JM:'Jamaica', MX:'México', NI:'Nicaragua', PA:'Panamá', PY:'Paraguay',
-    PE:'Perú', PR:'Puerto Rico', US:'Estados Unidos', UY:'Uruguay', VE:'Venezuela',
-    // Paraísos fiscales / centros financieros (Caribe + offshore)
-    KY:'Islas Caimán', BM:'Bermuda', BS:'Bahamas', BB:'Barbados',
-    VG:'Islas Vírgenes Británicas', VI:'Islas Vírgenes (US)',
-    TC:'Islas Turcas y Caicos', AI:'Anguila', AG:'Antigua y Barbuda',
-    DM:'Dominica', GD:'Granada', KN:'San Cristóbal y Nieves',
-    LC:'Santa Lucía', VC:'San Vicente', TT:'Trinidad y Tobago',
-    // Europa
-    GB:'Reino Unido', IE:'Irlanda', LU:'Luxemburgo', DE:'Alemania',
-    FR:'Francia', ES:'España', PT:'Portugal', IT:'Italia', NL:'Países Bajos',
-    BE:'Bélgica', CH:'Suiza', AT:'Austria', GR:'Grecia', SE:'Suecia',
-    NO:'Noruega', DK:'Dinamarca', FI:'Finlandia', IS:'Islandia',
-    PL:'Polonia', CZ:'República Checa', SK:'Eslovaquia', HU:'Hungría',
-    RO:'Rumania', BG:'Bulgaria', HR:'Croacia', SI:'Eslovenia',
-    EE:'Estonia', LV:'Letonia', LT:'Lituania', UA:'Ucrania',
-    BY:'Bielorrusia', MD:'Moldavia', RS:'Serbia', BA:'Bosnia',
-    MK:'Macedonia del Norte', AL:'Albania', ME:'Montenegro',
-    MT:'Malta', CY:'Chipre', JE:'Jersey', GG:'Guernsey', IM:'Isla de Man',
-    MC:'Mónaco', AD:'Andorra', LI:'Liechtenstein', SM:'San Marino', VA:'Vaticano',
-    // Asia
-    JP:'Japón', CN:'China', HK:'Hong Kong', TW:'Taiwán', KR:'Corea del Sur',
-    IN:'India', ID:'Indonesia', MY:'Malasia', SG:'Singapur', TH:'Tailandia',
-    PH:'Filipinas', VN:'Vietnam', PK:'Pakistán', BD:'Bangladesh',
-    LK:'Sri Lanka', NP:'Nepal', MM:'Myanmar', KH:'Camboya', LA:'Laos',
-    MN:'Mongolia', KZ:'Kazajistán', UZ:'Uzbekistán',
-    // Medio Oriente
-    IL:'Israel', AE:'Emiratos Árabes Unidos', SA:'Arabia Saudita',
-    QA:'Catar', KW:'Kuwait', BH:'Baréin', OM:'Omán', JO:'Jordania',
-    LB:'Líbano', SY:'Siria', IR:'Irán', IQ:'Irak', YE:'Yemen', TR:'Turquía',
-    // África
-    ZA:'Sudáfrica', EG:'Egipto', NG:'Nigeria', KE:'Kenia', MA:'Marruecos',
-    TN:'Túnez', DZ:'Argelia', LY:'Libia', GH:'Ghana', ET:'Etiopía',
-    TZ:'Tanzania', UG:'Uganda', AO:'Angola', MZ:'Mozambique',
-    MU:'Mauricio', SC:'Seychelles', SN:'Senegal', CI:'Costa de Marfil',
-    // Oceanía
-    AU:'Australia', NZ:'Nueva Zelanda', FJ:'Fiji', PG:'Papúa Nueva Guinea',
-    // Rusia y región
-    RU:'Rusia', AM:'Armenia', AZ:'Azerbaiyán', GE:'Georgia',
-    // Otros / agregados
-    EU:'Unión Europea',
-  };
+  // El mapa de países vive como global (COD_PAIS_NAME + paisName helper) para
+  // que se aplique de forma consistente en todas las vistas.
+  const paisLabels = COD_PAIS_NAME;
 
   // Por país
   const byPais = new Map();
@@ -9257,6 +9281,303 @@ function renderTopDownN3_Extranjero(rut, ciaName) {
   `;
 }
 
+// Nivel 3 · Otras inversiones + Alternativos (B.6). Toma el último B.6 cargado
+// de la cía. y muestra KPIs (alternativos NCG 152, liquidez, activo fijo,
+// préstamos), distribución por familia / tipo / moneda / país, top emisores
+// y nombres de fondo, y top instrumentos individuales.
+function renderTopDownN3_OtrasAlt(rut, ciaName) {
+  const all = activeFiles().filter(f => f.insurerRut === rut && f.fileType === 'b6');
+  if (all.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">Sin archivo B.6 cargado para ${escapeHtml(ciaName)}.</div>`;
+  }
+  const lastB6 = all.reduce((a, b) => a.periodo > b.periodo ? a : b);
+  const rawRecords = Array.isArray(lastB6.b6Records) ? lastB6.b6Records : [];
+  if (rawRecords.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">El B.6 cargado no tiene registros.</div>`;
+  }
+  // Si el archivo viene de un cache anterior al cálculo de familia, la derivamos aquí.
+  const records = rawRecords.map(r => r.familia ? r : { ...r, familia: b6FamiliaFor(r.codigoInversion, r.tipoInstrumento) });
+
+  // KPIs principales
+  const totalCLP = records.reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const totAlt = records.filter(r => r.familia === 'Alternativos (NCG 152)').reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const nAlt = records.filter(r => r.familia === 'Alternativos (NCG 152)').length;
+  const totLiq = records.filter(r => r.familia === 'Liquidez' || r.familia === 'Liquidez extran.').reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const nLiq = records.filter(r => r.familia === 'Liquidez' || r.familia === 'Liquidez extran.').length;
+  const totAF = records.filter(r => r.familia === 'Activo fijo').reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const nAF = records.filter(r => r.familia === 'Activo fijo').length;
+  const totPrest = records.filter(r => r.familia === 'Préstamos').reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const nPrest = records.filter(r => r.familia === 'Préstamos').length;
+
+  // Distribución por familia
+  const familiaColors = {
+    'Alternativos (NCG 152)': '#7030A0',
+    'Liquidez': '#10B981',
+    'Liquidez extran.': '#34D399',
+    'Activo fijo': '#BA7517',
+    'Préstamos': '#0EA5E9',
+    'Otras inv. extranjeras': '#1F4E79',
+    'Otras inv. financieras': '#3B82F6',
+    'Otros': '#9CA3AF',
+  };
+  const byFam = new Map();
+  for (const r of records) {
+    const f = r.familia || 'Otros';
+    const cur = byFam.get(f) || { fam: f, total: 0, n: 0 };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byFam.set(f, cur);
+  }
+  const familiasSorted = Array.from(byFam.values()).filter(f => f.total > 0).sort((a, b) => b.total - a.total);
+
+  // Distribución por tipo de instrumento (top 12)
+  const byTipo = new Map();
+  for (const r of records) {
+    const k = r.tipoInstrumento || '—';
+    const cur = byTipo.get(k) || { tipo: k, desc: r.tipoInstrumentoDesc || k, total: 0, n: 0 };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byTipo.set(k, cur);
+  }
+  const tiposSorted = Array.from(byTipo.values()).filter(t => t.total > 0).sort((a, b) => b.total - a.total).slice(0, 12);
+
+  // Distribución por moneda
+  const byMoneda = new Map();
+  for (const r of records) {
+    const k = r.moneda || '—';
+    const cur = byMoneda.get(k) || { moneda: k, total: 0, n: 0 };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byMoneda.set(k, cur);
+  }
+  const monedasSorted = Array.from(byMoneda.values()).filter(m => m.total > 0).sort((a, b) => b.total - a.total);
+
+  // Distribución por país (solo si hay países distintos a Chile/blank)
+  const byPais = new Map();
+  for (const r of records) {
+    const k = (r.pais || '').trim() || '—';
+    const cur = byPais.get(k) || { pais: k, total: 0, n: 0 };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byPais.set(k, cur);
+  }
+  const paisesSorted = Array.from(byPais.values()).filter(p => p.total > 0).sort((a, b) => b.total - a.total).slice(0, 10);
+
+  // Top fondos (nombreFondo) — clave para alternativos
+  const byFondo = new Map();
+  for (const r of records) {
+    const k = (r.nombreFondo || '').trim();
+    if (!k) continue;
+    const cur = byFondo.get(k) || { nombre: k, total: 0, n: 0, familia: r.familia };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byFondo.set(k, cur);
+  }
+  const topFondos = Array.from(byFondo.values()).sort((a, b) => b.total - a.total).slice(0, 15);
+
+  // Top custodios (cuando hay)
+  const byCustodio = new Map();
+  for (const r of records) {
+    const k = (r.nombreCustodio || '').trim();
+    if (!k) continue;
+    const cur = byCustodio.get(k) || { nombre: k, total: 0, n: 0 };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byCustodio.set(k, cur);
+  }
+  const topCustodios = Array.from(byCustodio.values()).sort((a, b) => b.total - a.total).slice(0, 10);
+
+  // Top instrumentos individuales
+  const topInst = records.slice().sort((a, b) => (b.valorFinalCLP || 0) - (a.valorFinalCLP || 0)).slice(0, 20);
+
+  // Helper para filas de distribución
+  const distRow = (label, val, total, sublabel, color) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:220px 1fr 60px 130px">
+        <span class="ic-dist-name" style="color:${color || 'var(--c-ameris-navy)'}">${escapeHtml(label)}${sublabel ? `<div style="font-size:10.5px;color:var(--c-muted);font-weight:400">${escapeHtml(sublabel)}</div>` : ''}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color || 'var(--c-ameris-blue)'}"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(val)}</span>
+      </div>
+    `;
+  };
+  const famRows = familiasSorted.map(f => distRow(
+    f.fam, f.total, totalCLP,
+    `${f.n} posici${f.n !== 1 ? 'ones' : 'ón'}`, familiaColors[f.fam] || '#7F7F7F'
+  )).join('');
+  const tipoRows = tiposSorted.map(t => distRow(
+    `${t.desc} (${t.tipo})`, t.total, totalCLP,
+    `${t.n} posici${t.n !== 1 ? 'ones' : 'ón'}`
+  )).join('');
+  const monedaRows = monedasSorted.map(m => distRow(
+    nombreMoneda(m.moneda) !== m.moneda ? `${m.moneda} · ${nombreMoneda(m.moneda)}` : m.moneda,
+    m.total, totalCLP, `${m.n} posici${m.n !== 1 ? 'ones' : 'ón'}`
+  )).join('');
+  const paisRows = paisesSorted.map(p => {
+    const nombrePais = paisName(p.pais);
+    const label = nombrePais !== p.pais ? `${nombrePais} (${p.pais})` : p.pais;
+    return distRow(label, p.total, totalCLP, `${p.n} posici${p.n !== 1 ? 'ones' : 'ón'}`);
+  }).join('');
+
+  // Top fondos
+  const fondoRows = topFondos.map((f, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td>
+        <strong>${escapeHtml(f.nombre)}</strong>
+        <div style="color:var(--c-muted);font-size:11px">${escapeHtml(f.familia || '—')} · ${f.n} posici${f.n !== 1 ? 'ones' : 'ón'}</div>
+      </td>
+      <td class="num">${fmtMoney(f.total)}</td>
+      <td class="num">${totalCLP > 0 ? (f.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  // Top custodios
+  const custodioRows = topCustodios.map((c, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td><strong>${escapeHtml(c.nombre)}</strong><div style="color:var(--c-muted);font-size:11px">${c.n} posici${c.n !== 1 ? 'ones' : 'ón'}</div></td>
+      <td class="num">${fmtMoney(c.total)}</td>
+      <td class="num">${totalCLP > 0 ? (c.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  // Top instrumentos
+  const instRows = topInst.map((r, i) => {
+    const nombre = r.nombreFondo || r.descripcionActivos || r.nemo || r.codigoInversionDesc || '(sin nombre)';
+    const subParts = [];
+    if (r.tipoInstrumentoDesc) subParts.push(r.tipoInstrumentoDesc);
+    if (r.pais) {
+      const np = paisName(r.pais);
+      subParts.push(np !== r.pais ? `${np} (${r.pais})` : r.pais);
+    }
+    if (r.moneda) subParts.push(r.moneda);
+    if (r.nombreCustodio) subParts.push(`custodia: ${r.nombreCustodio}`);
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(nombre)}</strong>
+          <div style="color:var(--c-muted);font-size:11px">${escapeHtml(subParts.join(' · ') || '—')}</div>
+          <div style="color:var(--c-muted);font-size:11px">${escapeHtml(r.familia || '—')}</div>
+        </td>
+        <td class="num">${fmtMoney(r.valorFinalCLP || 0)}</td>
+        <td class="num">${totalCLP > 0 ? ((r.valorFinalCLP || 0) / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="notice" style="background:linear-gradient(90deg,#F5EAFE 0%,#EAF2FD 100%);border-color:#7030A0">
+      <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · Otras inversiones + Alternativos</strong>
+      · Cierre ${fmtPeriod(lastB6.periodo)} · Archivo B.6 con ${records.length.toLocaleString('es-CL')} posici${records.length !== 1 ? 'ones' : 'ón'}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:14px 0">
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Valor cartera B.6</div>
+        <div style="font-size:20px;font-weight:700;color:var(--c-ameris-blue)">${fmtMoney(totalCLP)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${records.length.toLocaleString('es-CL')} posici${records.length !== 1 ? 'ones' : 'ón'}</div>
+      </div>
+      <div style="background:#faf5ff;border:1px solid #d8b4fe;border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:#6b21a8;text-transform:uppercase;letter-spacing:0.3px">Alternativos NCG 152</div>
+        <div style="font-size:20px;font-weight:700;color:#7030A0">${fmtMoney(totAlt)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${nAlt} fondo${nAlt !== 1 ? 's' : ''} · ${totalCLP > 0 ? (totAlt / totalCLP * 100).toFixed(1) : '0'}%</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Liquidez</div>
+        <div style="font-size:20px;font-weight:700;color:#10B981">${fmtMoney(totLiq)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${nLiq} posici${nLiq !== 1 ? 'ones' : 'ón'} · ${totalCLP > 0 ? (totLiq / totalCLP * 100).toFixed(1) : '0'}%</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Activo fijo</div>
+        <div style="font-size:20px;font-weight:700;color:#BA7517">${fmtMoney(totAF)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${nAF} bien${nAF !== 1 ? 'es' : ''} · ${totalCLP > 0 ? (totAF / totalCLP * 100).toFixed(1) : '0'}%</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Préstamos</div>
+        <div style="font-size:20px;font-weight:700;color:#0EA5E9">${fmtMoney(totPrest)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${nPrest} préstamo${nPrest !== 1 ? 's' : ''} · ${totalCLP > 0 ? (totPrest / totalCLP * 100).toFixed(1) : '0'}%</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">Distribución por familia</div></div>
+      <div style="padding:14px 18px">
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">
+          <strong>Alternativos NCG 152</strong> = fondos privados (PE, VC, deuda privada, infra) bajo la norma específica.
+          <strong>Activo fijo</strong> = inmuebles operacionales de la cía. (no para arriendo — eso está en B.4).
+          <strong>Préstamos</strong> = créditos directos otorgados (comerciales, hipotecarios, pignoraticios).
+        </div>
+        <div class="ic-dist-list">${famRows}</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="gap:14px;margin-top:14px">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Top 12 tipos de instrumento</div></div>
+        <div style="padding:14px 18px">
+          <div class="ic-dist-list">${tipoRows || '<div style="color:var(--c-muted);font-size:12px">Sin datos.</div>'}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por moneda</div></div>
+        <div style="padding:14px 18px">
+          <div class="ic-dist-list">${monedaRows || '<div style="color:var(--c-muted);font-size:12px">Sin datos.</div>'}</div>
+        </div>
+      </div>
+    </div>
+
+    ${paisesSorted.length > 1 || (paisesSorted.length === 1 && paisesSorted[0].pais !== '—' && paisesSorted[0].pais !== 'CL') ? `
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Distribución por país</div></div>
+      <div style="padding:14px 18px">
+        <div class="ic-dist-list">${paisRows}</div>
+      </div>
+    </div>
+    ` : ''}
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 fondos (clave para alternativos)</div></div>
+      ${topFondos.length === 0
+        ? `<div style="padding:18px;color:var(--c-muted);font-size:12.5px">Sin posiciones con nombre de fondo declarado.</div>`
+        : `<div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Fondo</th><th class="num">Exposición</th><th class="num">% B.6 total</th></tr></thead>
+              <tbody>${fondoRows}</tbody>
+            </table>
+          </div>
+          ${byFondo.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byFondo.size} fondos únicos.</div>` : ''}`
+      }
+    </div>
+
+    ${topCustodios.length > 0 ? `
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 10 custodios</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Custodio</th><th class="num">Exposición</th><th class="num">% B.6 total</th></tr></thead>
+          <tbody>${custodioRows}</tbody>
+        </table>
+      </div>
+      ${byCustodio.size > 10 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 10 de ${byCustodio.size} custodios únicos.</div>` : ''}
+    </div>
+    ` : ''}
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 20 instrumentos individuales</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Instrumento</th><th class="num">Valor final</th><th class="num">% B.6 total</th></tr></thead>
+          <tbody>${instRows}</tbody>
+        </table>
+      </div>
+      ${records.length > 20 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 20 de ${records.length.toLocaleString('es-CL')} posiciones.</div>` : ''}
+    </div>
+  `;
+}
+
 // Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
 // B.8 manda como fuente de verdad si está cargado. Si no, se suman los
 // archivos detalle disponibles (con banner indicando fallback).
@@ -9454,7 +9775,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
   // construcción — mostramos un indicador visual claro de ambos estados.
   const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
-  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5']);  // ampliar cuando se sumen B.6/B.7
+  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5', 'b6']);  // ampliar cuando se sume B.7
   const archivoRows = cart.archivos.map(a => {
     const clase = tipoToClase[a.tipo];
     const isReady = a.presente && clase && CLASES_LISTAS.has(clase);
@@ -9500,7 +9821,15 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   if (TOPDOWN_INNER_CLASE && CLASES_LISTAS.has(TOPDOWN_INNER_CLASE)) {
     const tieneArchivo = cart.archivos.find(a => tipoToClase[a.tipo] === TOPDOWN_INNER_CLASE && a.presente);
     if (tieneArchivo) {
-      const claseLabel = TOPDOWN_INNER_CLASE === 'b1' ? 'Renta Fija (B.1)' : TOPDOWN_INNER_CLASE.toUpperCase();
+      const claseLabelMap = {
+        b1: 'Renta Fija (B.1)',
+        b2: 'CFI y acciones (B.2)',
+        b4: 'Bienes Raíces (B.4)',
+        b5: 'Extranjero (B.5)',
+        b6: 'Otras + Alternativos (B.6)',
+        b7: 'Derivados (B.7)',
+      };
+      const claseLabel = claseLabelMap[TOPDOWN_INNER_CLASE] || TOPDOWN_INNER_CLASE.toUpperCase();
       innerPanel = `
         <div class="topdown-inner-overlay" id="topdown-inner-overlay" style="position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(2px)">
           <div id="topdown-inner-panel" role="dialog" aria-modal="true" style="background:white;border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,0.35);width:min(1100px,100%);max-height:90vh;display:flex;flex-direction:column;overflow:hidden" onclick="event.stopPropagation()">
