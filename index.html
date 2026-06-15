@@ -8962,15 +8962,57 @@ function renderTopDownN3_Extranjero(rut, ciaName) {
   const pctDeuda = totalCLP > 0 ? (totalDeuda / totalCLP * 100) : 0;
   const pctCuotas = totalCLP > 0 ? (totalCuotas / totalCLP * 100) : 0;
 
-  // Mapas de país y moneda — heurísticas legibles
+  // Mapa de códigos ISO 3166-1 alpha-2 → nombre legible del país. Cobertura
+  // amplia para inversiones offshore comunes en aseguradoras chilenas:
+  // jurisdicciones de fondos (KY/BM/IE/LU/JE/etc.), Latinoamérica, Asia,
+  // Europa, Norteamérica, África, Oceanía. Si aparece un código no mapeado,
+  // se muestra el código crudo.
   const paisLabels = {
-    CL:'Chile', US:'Estados Unidos', BR:'Brasil', MX:'México', PE:'Perú',
-    CO:'Colombia', AR:'Argentina', CA:'Canadá', GB:'Reino Unido', DE:'Alemania',
-    FR:'Francia', ES:'España', IT:'Italia', NL:'Países Bajos', LU:'Luxemburgo',
-    IE:'Irlanda', CH:'Suiza', JP:'Japón', CN:'China', IN:'India',
-    AU:'Australia', KR:'Corea del Sur', ZA:'Sudáfrica', RU:'Rusia',
-    SG:'Singapur', HK:'Hong Kong', BE:'Bélgica', SE:'Suecia', NO:'Noruega',
-    DK:'Dinamarca', FI:'Finlandia', AT:'Austria', PT:'Portugal', GR:'Grecia',
+    // Americas
+    CL:'Chile', AR:'Argentina', BO:'Bolivia', BR:'Brasil', CA:'Canadá',
+    CO:'Colombia', CR:'Costa Rica', CU:'Cuba', DO:'Rep. Dominicana',
+    EC:'Ecuador', SV:'El Salvador', GT:'Guatemala', HT:'Haití', HN:'Honduras',
+    JM:'Jamaica', MX:'México', NI:'Nicaragua', PA:'Panamá', PY:'Paraguay',
+    PE:'Perú', PR:'Puerto Rico', US:'Estados Unidos', UY:'Uruguay', VE:'Venezuela',
+    // Paraísos fiscales / centros financieros (Caribe + offshore)
+    KY:'Islas Caimán', BM:'Bermuda', BS:'Bahamas', BB:'Barbados',
+    VG:'Islas Vírgenes Británicas', VI:'Islas Vírgenes (US)',
+    TC:'Islas Turcas y Caicos', AI:'Anguila', AG:'Antigua y Barbuda',
+    DM:'Dominica', GD:'Granada', KN:'San Cristóbal y Nieves',
+    LC:'Santa Lucía', VC:'San Vicente', TT:'Trinidad y Tobago',
+    // Europa
+    GB:'Reino Unido', IE:'Irlanda', LU:'Luxemburgo', DE:'Alemania',
+    FR:'Francia', ES:'España', PT:'Portugal', IT:'Italia', NL:'Países Bajos',
+    BE:'Bélgica', CH:'Suiza', AT:'Austria', GR:'Grecia', SE:'Suecia',
+    NO:'Noruega', DK:'Dinamarca', FI:'Finlandia', IS:'Islandia',
+    PL:'Polonia', CZ:'República Checa', SK:'Eslovaquia', HU:'Hungría',
+    RO:'Rumania', BG:'Bulgaria', HR:'Croacia', SI:'Eslovenia',
+    EE:'Estonia', LV:'Letonia', LT:'Lituania', UA:'Ucrania',
+    BY:'Bielorrusia', MD:'Moldavia', RS:'Serbia', BA:'Bosnia',
+    MK:'Macedonia del Norte', AL:'Albania', ME:'Montenegro',
+    MT:'Malta', CY:'Chipre', JE:'Jersey', GG:'Guernsey', IM:'Isla de Man',
+    MC:'Mónaco', AD:'Andorra', LI:'Liechtenstein', SM:'San Marino', VA:'Vaticano',
+    // Asia
+    JP:'Japón', CN:'China', HK:'Hong Kong', TW:'Taiwán', KR:'Corea del Sur',
+    IN:'India', ID:'Indonesia', MY:'Malasia', SG:'Singapur', TH:'Tailandia',
+    PH:'Filipinas', VN:'Vietnam', PK:'Pakistán', BD:'Bangladesh',
+    LK:'Sri Lanka', NP:'Nepal', MM:'Myanmar', KH:'Camboya', LA:'Laos',
+    MN:'Mongolia', KZ:'Kazajistán', UZ:'Uzbekistán',
+    // Medio Oriente
+    IL:'Israel', AE:'Emiratos Árabes Unidos', SA:'Arabia Saudita',
+    QA:'Catar', KW:'Kuwait', BH:'Baréin', OM:'Omán', JO:'Jordania',
+    LB:'Líbano', SY:'Siria', IR:'Irán', IQ:'Irak', YE:'Yemen', TR:'Turquía',
+    // África
+    ZA:'Sudáfrica', EG:'Egipto', NG:'Nigeria', KE:'Kenia', MA:'Marruecos',
+    TN:'Túnez', DZ:'Argelia', LY:'Libia', GH:'Ghana', ET:'Etiopía',
+    TZ:'Tanzania', UG:'Uganda', AO:'Angola', MZ:'Mozambique',
+    MU:'Mauricio', SC:'Seychelles', SN:'Senegal', CI:'Costa de Marfil',
+    // Oceanía
+    AU:'Australia', NZ:'Nueva Zelanda', FJ:'Fiji', PG:'Papúa Nueva Guinea',
+    // Rusia y región
+    RU:'Rusia', AM:'Armenia', AZ:'Azerbaiyán', GE:'Georgia',
+    // Otros / agregados
+    EU:'Unión Europea',
   };
 
   // Por país
