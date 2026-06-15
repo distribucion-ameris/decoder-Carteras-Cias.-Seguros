@@ -8320,11 +8320,11 @@ function renderTopDownN3(rut, clase) {
 
   if (clase === 'b1') return renderTopDownN3_RentaFija(rut, ciaName);
   if (clase === 'b2') return renderTopDownN3_CFI(rut, ciaName);
+  if (clase === 'b4') return renderTopDownN3_BR(rut, ciaName);
 
   // Placeholder para clases futuras
   const claseLabels = {
-    b4: 'Bienes raíces', b5: 'Extranjero',
-    b6: 'Otras + Alternativos', b7: 'Derivados',
+    b5: 'Extranjero', b6: 'Otras + Alternativos', b7: 'Derivados',
   };
   return `
     <div style="padding:24px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px">
@@ -8691,6 +8691,253 @@ function renderTopDownN3_CFI(rut, ciaName) {
   `;
 }
 
+// Nivel 3 · Bienes raíces (B.4). Toma el último B.4 cargado de la cía. y
+// muestra KPIs, distribución por uso/tipo/destino, top comunas, top
+// arrendatarios y top inmuebles individuales.
+function renderTopDownN3_BR(rut, ciaName) {
+  const all = activeFiles().filter(f => f.insurerRut === rut && f.fileType === 'b4');
+  if (all.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">Sin archivo B.4 cargado para ${escapeHtml(ciaName)}.</div>`;
+  }
+  const lastB4 = all.reduce((a, b) => a.periodo > b.periodo ? a : b);
+  const records = Array.isArray(lastB4.b4Records) ? lastB4.b4Records : [];
+  if (records.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">El B.4 cargado no tiene posiciones.</div>`;
+  }
+
+  // KPIs principales
+  const totalCLP = records.reduce((s, r) => s + (r.valorFinalCLP || 0), 0);
+  const totalCostoMS = records.reduce((s, r) => s + (r.costoActualizadoMS || 0), 0);
+  const totalTasacion1MS = records.reduce((s, r) => s + (r.tasacion1MS || 0), 0);
+  const totalArriendoUF = records.reduce((s, r) => s + (r.montoArriendoUF || 0), 0);
+  const conArriendo = records.filter(r => r.montoArriendoUF > 0).length;
+
+  // Labels para códigos
+  const usoLabels = {
+    A:'Arriendo (renta)', P:'Propio (operación)', M:'Mixto',
+    L:'Leasing', C:'Construcción', S:'Sin uso',
+    D:'Disponible / Desocupado', O:'Otros',
+  };
+  const usoColors = {
+    A:'#047857', P:'#1F4E79', M:'#7030A0', L:'#BA7517',
+    C:'#0EA5E9', S:'#9CA3AF', D:'#94A3B8', O:'#6B7280',
+  };
+  const tipoLabels = { UR:'Urbano', NU:'No urbano' };
+  const destinoLabels = { HA:'Habitacional', NH:'No habitacional' };
+
+  // Distribución por uso
+  const byUso = {};
+  for (const r of records) {
+    const u = r.uso || 'O';
+    byUso[u] = byUso[u] || { uso: u, total: 0, n: 0 };
+    byUso[u].total += r.valorFinalCLP || 0;
+    byUso[u].n += 1;
+  }
+  const usosSorted = Object.values(byUso).filter(u => u.total > 0).sort((a, b) => b.total - a.total);
+
+  // Distribución por tipo (urbano vs no urbano)
+  const byTipo = {};
+  for (const r of records) {
+    const t = r.tipoInmueble || '—';
+    byTipo[t] = byTipo[t] || { tipo: t, total: 0, n: 0 };
+    byTipo[t].total += r.valorFinalCLP || 0;
+    byTipo[t].n += 1;
+  }
+  const tiposSorted = Object.values(byTipo).filter(t => t.total > 0).sort((a, b) => b.total - a.total);
+
+  // Distribución por destino (habitacional vs no)
+  const byDestino = {};
+  for (const r of records) {
+    const d = r.destino || '—';
+    byDestino[d] = byDestino[d] || { destino: d, total: 0, n: 0 };
+    byDestino[d].total += r.valorFinalCLP || 0;
+    byDestino[d].n += 1;
+  }
+  const destinosSorted = Object.values(byDestino).filter(d => d.total > 0).sort((a, b) => b.total - a.total);
+
+  // Top comunas
+  const byComuna = new Map();
+  for (const r of records) {
+    const k = r.comuna || (r.comunaCodigo ? `(código ${r.comunaCodigo})` : '(sin comuna)');
+    const cur = byComuna.get(k) || { comuna: k, total: 0, n: 0 };
+    cur.total += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byComuna.set(k, cur);
+  }
+  const topComunas = Array.from(byComuna.values()).sort((a, b) => b.total - a.total).slice(0, 15);
+
+  // Top arrendatarios (solo los con arriendo > 0)
+  const byArrendatario = new Map();
+  for (const r of records) {
+    if (!r.montoArriendoUF || r.montoArriendoUF <= 0) continue;
+    const k = r.arrendatario || '(sin arrendatario)';
+    const cur = byArrendatario.get(k) || { nombre: k, totalUF: 0, totalCLP: 0, n: 0 };
+    cur.totalUF += r.montoArriendoUF || 0;
+    cur.totalCLP += r.valorFinalCLP || 0;
+    cur.n += 1;
+    byArrendatario.set(k, cur);
+  }
+  const topArrendatarios = Array.from(byArrendatario.values()).sort((a, b) => b.totalUF - a.totalUF).slice(0, 15);
+
+  // Top inmuebles individuales (por valor final)
+  const topInmuebles = records.slice().sort((a, b) => (b.valorFinalCLP || 0) - (a.valorFinalCLP || 0)).slice(0, 20);
+
+  // Helper para filas de distribución
+  const distRow = (label, val, total, sublabel, color) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:200px 1fr 60px 130px">
+        <span class="ic-dist-name" style="color:${color || 'var(--c-ameris-navy)'}">${escapeHtml(label)}${sublabel ? `<div style="font-size:10.5px;color:var(--c-muted);font-weight:400">${escapeHtml(sublabel)}</div>` : ''}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color || 'var(--c-ameris-blue)'}"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(val)}</span>
+      </div>
+    `;
+  };
+  const usoRows = usosSorted.map(u => distRow(
+    `${u.uso} · ${usoLabels[u.uso] || u.uso}`, u.total, totalCLP,
+    `${u.n} inmueble${u.n !== 1 ? 's' : ''}`, usoColors[u.uso] || '#7F7F7F'
+  )).join('');
+  const tipoRows = tiposSorted.map(t => distRow(
+    tipoLabels[t.tipo] || t.tipo, t.total, totalCLP,
+    `${t.n} inmueble${t.n !== 1 ? 's' : ''}`, t.tipo === 'UR' ? '#1F4E79' : '#BA7517'
+  )).join('');
+  const destinoRows = destinosSorted.map(d => distRow(
+    destinoLabels[d.destino] || d.destino, d.total, totalCLP,
+    `${d.n} inmueble${d.n !== 1 ? 's' : ''}`, d.destino === 'HA' ? '#0EA5E9' : '#7030A0'
+  )).join('');
+
+  // Top comunas
+  const comunaRows = topComunas.map((c, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td><strong>${escapeHtml(c.comuna)}</strong><div style="color:var(--c-muted);font-size:11px">${c.n} inmueble${c.n !== 1 ? 's' : ''}</div></td>
+      <td class="num">${fmtMoney(c.total)}</td>
+      <td class="num">${totalCLP > 0 ? (c.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  // Top arrendatarios
+  const arrendatarioRows = topArrendatarios.map((a, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td><strong>${escapeHtml(a.nombre)}</strong><div style="color:var(--c-muted);font-size:11px">${a.n} inmueble${a.n !== 1 ? 's' : ''} · valor cartera ${fmtMoney(a.totalCLP)}</div></td>
+      <td class="num">${fmtNumber(a.totalUF, 2)} UF</td>
+      <td class="num">${totalArriendoUF > 0 ? (a.totalUF / totalArriendoUF * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  // Top inmuebles individuales
+  const inmuebleRows = topInmuebles.map((r, i) => {
+    const tipos = (r.descTypes || []).join(', ') || '—';
+    const ubic = [r.comuna, r.ciudad].filter(Boolean).join(' · ') || r.ubicacion || '—';
+    const usoLbl = usoLabels[r.uso] || r.uso || '—';
+    const arriendoTxt = r.montoArriendoUF > 0 ? ` · arriendo ${fmtNumber(r.montoArriendoUF, 2)} UF/mes` : '';
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(r.rolSII || '(sin rol)')}</strong>
+          <div style="color:var(--c-muted);font-size:11px">${escapeHtml(ubic)} · ${escapeHtml(tipos)}</div>
+          <div style="color:var(--c-muted);font-size:11px">${escapeHtml(usoLbl)}${arriendoTxt}</div>
+        </td>
+        <td class="num">${fmtMoney(r.valorFinalCLP)}</td>
+        <td class="num">${totalCLP > 0 ? (r.valorFinalCLP / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
+      <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · Bienes raíces</strong>
+      · Cierre ${fmtPeriod(lastB4.periodo)} · Archivo B.4 con ${records.length.toLocaleString('es-CL')} inmueble${records.length !== 1 ? 's' : ''}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0">
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Valor cartera BR</div>
+        <div style="font-size:20px;font-weight:700;color:var(--c-ameris-blue)">${fmtMoney(totalCLP)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">Costo actualizado: ${fmtMoney(totalCostoMS * 1000)}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">N° Inmuebles</div>
+        <div style="font-size:20px;font-weight:700">${records.length.toLocaleString('es-CL')}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${byComuna.size} comuna${byComuna.size !== 1 ? 's' : ''}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Arriendo mensual</div>
+        <div style="font-size:20px;font-weight:700">${fmtNumber(totalArriendoUF, 0)} UF</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${conArriendo} inmueble${conArriendo !== 1 ? 's' : ''} con renta</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">Tasación 1 total</div>
+        <div style="font-size:20px;font-weight:700">${fmtMoney(totalTasacion1MS * 1000)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">vs Val. contable: ${totalCLP > 0 ? ((totalTasacion1MS * 1000) / totalCLP * 100).toFixed(0) : '—'}%</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="gap:14px">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por uso</div></div>
+        <div style="padding:14px 18px">
+          <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">Arriendo = inmueble alquilado a terceros. Propio = operación interna. Leasing = arrendado por la cía. Cualquier inmueble en construcción o sin uso aparece en su categoría.</div>
+          <div class="ic-dist-list">${usoRows}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Distribución por destino</div></div>
+        <div style="padding:14px 18px">
+          <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">Habitacional = viviendas, departamentos. No habitacional = oficinas, locales comerciales, bodegas, industriales.</div>
+          <div class="ic-dist-list">${destinoRows}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Distribución urbano vs no urbano</div></div>
+      <div style="padding:14px 18px">
+        <div class="ic-dist-list">${tipoRows}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 comunas por exposición</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Comuna</th><th class="num">Valor cartera</th><th class="num">% BR total</th></tr></thead>
+          <tbody>${comunaRows}</tbody>
+        </table>
+      </div>
+      ${byComuna.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byComuna.size} comunas únicas.</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 arrendatarios por monto mensual</div></div>
+      ${topArrendatarios.length === 0
+        ? `<div style="padding:18px;color:var(--c-muted);font-size:12.5px">Sin inmuebles en arriendo en este archivo.</div>`
+        : `<div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Arrendatario</th><th class="num">Arriendo mensual</th><th class="num">% arriendo total</th></tr></thead>
+              <tbody>${arrendatarioRows}</tbody>
+            </table>
+          </div>
+          ${byArrendatario.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byArrendatario.size} arrendatarios únicos.</div>` : ''}`
+      }
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 20 inmuebles por valor</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Inmueble (Rol SII · ubicación · uso)</th><th class="num">Valor final</th><th class="num">% BR total</th></tr></thead>
+          <tbody>${inmuebleRows}</tbody>
+        </table>
+      </div>
+      ${records.length > 20 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 20 de ${records.length.toLocaleString('es-CL')} inmuebles.</div>` : ''}
+    </div>
+  `;
+}
+
 // Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
 // B.8 manda como fuente de verdad si está cargado. Si no, se suman los
 // archivos detalle disponibles (con banner indicando fallback).
@@ -8888,7 +9135,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
   // construcción — mostramos un indicador visual claro de ambos estados.
   const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
-  const CLASES_LISTAS = new Set(['b1', 'b2']);  // ampliar cuando se sumen B.4/B.7/etc.
+  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4']);  // ampliar cuando se sumen B.6/B.7/etc.
   const archivoRows = cart.archivos.map(a => {
     const clase = tipoToClase[a.tipo];
     const isReady = a.presente && clase && CLASES_LISTAS.has(clase);
