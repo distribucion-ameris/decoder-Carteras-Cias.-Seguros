@@ -3533,11 +3533,16 @@ function parseB7Swap(line) {
   });
 }
 
-// Tipo 6: Pacto (estructura diferente — sin _b7BaseIdent)
+// Tipo 6: Pacto (estructura diferente — sin _b7BaseIdent).
+// NOTA: el campo valoriz_cierre en la spec original se leía con 13 chars desde
+// pos 323. Pero validación contra archivos reales (METLIFE, Confuturo, Consorcio)
+// mostró que los 2 primeros chars son contaminación de un campo previo no
+// documentado — los últimos 11 chars contienen el valor real en M$. La spec
+// efectiva es 11 chars desde pos 325.
 function parseB7Pacto(line) {
   const sub = (i, len) => line.substring(i, i + len);
   const tipoOp = sub(1, 10).trim();
-  const valorizCierre = _b7Int(sub(323, 13));
+  const valorizCierre = _b7Int(sub(325, 11));
   return {
     subtipo: 'Pacto',
     tipoOp,
@@ -3564,9 +3569,9 @@ function parseB7Pacto(line) {
     valorPactado: _b7Dec(sub(294, 16), 3),
     interesDev: _b7Int(sub(310, 13)),
     valorizCierre,
-    vdmInformacion: _b7Int(sub(336, 13)),
-    tsa: sub(349, 2).trim(),
-    metodo: sub(351, 6).trim(),
+    vdmInformacion: _b7Int(sub(338, 11)),
+    tsa: sub(351, 2).trim(),
+    metodo: sub(353, 6).trim(),
     // Campos equivalentes para uniformidad con Forward/Swap
     vrContrato: valorizCierre,
     montoActivo: valorizCierre,
