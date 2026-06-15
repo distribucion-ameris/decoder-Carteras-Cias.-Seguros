@@ -8319,11 +8319,12 @@ function renderTopDownN3(rut, clase) {
   const ciaName = cia.insurerName || `(RUT ${fmtRut(rut)})`;
 
   if (clase === 'b1') return renderTopDownN3_RentaFija(rut, ciaName);
+  if (clase === 'b2') return renderTopDownN3_CFI(rut, ciaName);
 
   // Placeholder para clases futuras
   const claseLabels = {
-    b2: 'CFI nacional + Acciones', b4: 'Bienes raíces',
-    b5: 'Extranjero', b6: 'Otras + Alternativos', b7: 'Derivados',
+    b4: 'Bienes raíces', b5: 'Extranjero',
+    b6: 'Otras + Alternativos', b7: 'Derivados',
   };
   return `
     <div style="padding:24px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px">
@@ -8493,6 +8494,171 @@ function renderTopDownN3_RentaFija(rut, ciaName) {
         </table>
       </div>
       ${byEmisor.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byEmisor.size} emisores únicos.</div>` : ''}
+    </div>
+  `;
+}
+
+// Nivel 3 · CFI nacional + Acciones (B.2). Toma el último B.2 cargado de la
+// cía. y muestra KPIs + distribución por categoría (CFI vs Acciones) + por
+// AGF administradora + top 15 fondos individuales.
+function renderTopDownN3_CFI(rut, ciaName) {
+  const all = activeFiles().filter(f => f.insurerRut === rut && (f.fileType || 'b2') === 'b2');
+  if (all.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">Sin archivo B.2 cargado para ${escapeHtml(ciaName)}.</div>`;
+  }
+  const lastB2 = all.reduce((a, b) => a.periodo > b.periodo ? a : b);
+  const holdings = Array.isArray(lastB2.holdings) ? lastB2.holdings : [];
+  if (holdings.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">El B.2 cargado no tiene posiciones.</div>`;
+  }
+
+  // Helpers: distinguir CFI (cuotas de fondos) vs ACC (acciones)
+  const isCFI = h => (h.tipoInst || '').startsWith('CFI');
+  const cfis = holdings.filter(isCFI);
+  const accs = holdings.filter(h => !isCFI(h));
+  const totalCLP = holdings.reduce((s, h) => s + (h.valLibro || 0), 0);
+  const totalCFI = cfis.reduce((s, h) => s + (h.valLibro || 0), 0);
+  const totalACC = accs.reduce((s, h) => s + (h.valLibro || 0), 0);
+  const pctCFI = totalCLP > 0 ? (totalCFI / totalCLP * 100) : 0;
+  const pctACC = totalCLP > 0 ? (totalACC / totalCLP * 100) : 0;
+
+  // Por AGF administradora (canonicalAgfRut + canonicalAgfName)
+  const byAgf = new Map();
+  for (const h of holdings) {
+    const cr = canonicalAgfRut(h.rutEmisor);
+    const cur = byAgf.get(cr) || {
+      rut: cr, name: canonicalAgfName(h.rutEmisor),
+      total: 0, n: 0, fondos: new Set(),
+    };
+    cur.total += h.valLibro || 0;
+    cur.n += 1;
+    cur.fondos.add((h.nemo || '') + '||' + (h.serie || ''));
+    byAgf.set(cr, cur);
+  }
+  const agfsSorted = Array.from(byAgf.values())
+    .filter(a => a.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  // Top fondos individuales (nemo + serie)
+  const byFondo = new Map();
+  for (const h of holdings) {
+    const k = (h.nemo || '') + '||' + (h.serie || '');
+    const cur = byFondo.get(k) || {
+      nemo: h.nemo, serie: h.serie,
+      friendly: h.nemoFriendly || h.nemo,
+      agf: canonicalAgfName(h.rutEmisor),
+      total: 0, unidades: 0,
+      tipoInst: h.tipoInst,
+      isCFI: isCFI(h),
+    };
+    cur.total += h.valLibro || 0;
+    cur.unidades += h.unidades || 0;
+    byFondo.set(k, cur);
+  }
+  const topFondos = Array.from(byFondo.values())
+    .filter(f => f.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
+
+  // Distribución por categoría (CFI vs ACC)
+  const distRow = (label, val, total, sublabel, color) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:200px 1fr 60px 130px">
+        <span class="ic-dist-name" style="color:${color || 'var(--c-ameris-navy)'}">${escapeHtml(label)}${sublabel ? `<div style="font-size:10.5px;color:var(--c-muted);font-weight:400">${escapeHtml(sublabel)}</div>` : ''}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color || 'var(--c-ameris-blue)'}"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(val)}</span>
+      </div>
+    `;
+  };
+  const catRows = [
+    distRow('CFI · Cuotas de fondos', totalCFI, totalCLP, `${cfis.length} posiciones`, '#375623'),
+    distRow('ACC · Acciones nacionales', totalACC, totalCLP, `${accs.length} posiciones`, '#833C00'),
+  ].join('');
+
+  // Top AGFs
+  const agfRows = agfsSorted.slice(0, 15).map((a, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td>
+        <strong>${escapeHtml(a.name)}</strong>
+        <div style="color:var(--c-muted);font-size:11px">RUT ${fmtRut(a.rut)} · ${a.fondos.size} fondo${a.fondos.size !== 1 ? 's' : ''} · ${a.n} posición${a.n !== 1 ? 'es' : ''}</div>
+      </td>
+      <td class="num">${fmtMoney(a.total)}</td>
+      <td class="num">${totalCLP > 0 ? (a.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  // Top fondos individuales
+  const fondoRows = topFondos.map((f, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td>
+        <strong>${escapeHtml(f.friendly || f.nemo)}</strong>
+        ${f.serie ? `<span style="color:var(--c-muted);font-size:11px;margin-left:4px">Serie ${escapeHtml(f.serie)}</span>` : ''}
+        <div style="color:var(--c-muted);font-size:11px">${escapeHtml(f.agf)} · ${f.isCFI ? 'CFI' : 'Acción'}${f.unidades ? ' · ' + fmtNumber(f.unidades, 2) + ' unidades' : ''}</div>
+      </td>
+      <td class="num">${fmtMoney(f.total)}</td>
+      <td class="num">${totalCLP > 0 ? (f.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
+      <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · CFI nacional + Acciones</strong>
+      · Cierre ${fmtPeriod(lastB2.periodo)} · Archivo B.2 con ${holdings.length.toLocaleString('es-CL')} posiciones
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0">
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">AUM Cuotas + Acciones</div>
+        <div style="font-size:20px;font-weight:700;color:var(--c-ameris-blue)">${fmtMoney(totalCLP)}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">N° Posiciones</div>
+        <div style="font-size:20px;font-weight:700">${holdings.length.toLocaleString('es-CL')}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${cfis.length} CFI · ${accs.length} Acciones</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">N° AGFs distintas</div>
+        <div style="font-size:20px;font-weight:700">${agfsSorted.length}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${byFondo.size} fondos únicos</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">% CFI vs % Acc.</div>
+        <div style="font-size:20px;font-weight:700">${pctCFI.toFixed(1)}% / ${pctACC.toFixed(1)}%</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">Composición · Cuotas de fondos (CFI) vs Acciones (ACC)</div></div>
+      <div style="padding:14px 18px">
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">El B.2 contiene dos tipos de instrumentos: cuotas de fondos de inversión nacionales (CFI*) y acciones de S.A. abiertas (ACC*). En aseguradoras suele dominar CFI por el rol de las AGFs en la gestión institucional.</div>
+        <div class="ic-dist-list">${catRows}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 AGFs administradoras por exposición</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>AGF / Emisor</th><th class="num">Exposición</th><th class="num">% B.2 total</th></tr></thead>
+          <tbody>${agfRows}</tbody>
+        </table>
+      </div>
+      ${agfsSorted.length > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${agfsSorted.length} AGFs únicas.</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 fondos / acciones individuales</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Fondo / Acción</th><th class="num">Exposición</th><th class="num">% B.2 total</th></tr></thead>
+          <tbody>${fondoRows}</tbody>
+        </table>
+      </div>
+      ${byFondo.size > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${byFondo.size} instrumentos únicos.</div>` : ''}
     </div>
   `;
 }
@@ -8694,7 +8860,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
   // construcción — mostramos un indicador visual claro de ambos estados.
   const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
-  const CLASES_LISTAS = new Set(['b1']);  // ampliar cuando se sumen B.4/B.7/etc.
+  const CLASES_LISTAS = new Set(['b1', 'b2']);  // ampliar cuando se sumen B.4/B.7/etc.
   const archivoRows = cart.archivos.map(a => {
     const clase = tipoToClase[a.tipo];
     const isReady = a.presente && clase && CLASES_LISTAS.has(clase);
