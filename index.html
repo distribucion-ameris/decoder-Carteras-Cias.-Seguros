@@ -1900,7 +1900,7 @@
           </svg>
         </div>
         <h4>3 · Navegá las pestañas</h4>
-        <p><strong>Resumen General</strong> para vista macro · <strong>Por AGF / Compañía</strong> para drill-down · <strong>Pulso Ameris</strong> para vista específica de tu AGF · <strong>Evolución</strong> para tendencias temporales.</p>
+        <p><strong>Resumen Fondos de Inversión</strong> para vista macro · <strong>Por AGF / Compañía</strong> para drill-down · <strong>Pulso Ameris</strong> para vista específica de tu AGF · <strong>Evolución</strong> para tendencias temporales.</p>
       </div>
     </div>
   </div>
@@ -1995,7 +1995,7 @@
       </button>
       <div class="tab-group-menu" id="tab-group-fondos-menu" style="display:none;position:absolute;top:100%;left:0;background:white;border:1px solid var(--c-border);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.12);min-width:240px;z-index:100;padding:6px;margin-top:4px">
         <button class="tab tab-group-item" data-tab="general" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Vista panorámica del sistema: KPIs, distribución por categoría, top AGFs y top compañías">
-          <strong>Resumen General</strong>
+          <strong>Resumen Fondos de Inversión</strong>
           <div style="font-size:11px;color:var(--c-muted);margin-top:2px">KPIs, distribución y top movers del sistema</div>
         </button>
         <button class="tab tab-group-item" data-tab="insurer" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Detalle de la cartera de cada compañía de seguros, agrupado por categoría">
@@ -10391,7 +10391,7 @@ function setupTabs() {
   // Labels y descripciones cortas para sincronizar el trigger del dropdown
   // 'Fondos de inversión' con la sub-pestaña actualmente activa.
   const fondosLabels = {
-    general:    'Fondos · Resumen General',
+    general:    'Fondos · Resumen',
     insurer:    'Fondos · Por Compañía',
     agf:        'Fondos · Por AGF',
     evolucion:  'Fondos · Evolución',
@@ -10826,7 +10826,7 @@ function _generatePdfReport() {
   doc.text('AMERIS AGF · ANÁLISIS CMF COMPAÑÍAS DE SEGUROS', MARGIN_X, 9);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
-  doc.text(`Resumen General · ${lastP}`, MARGIN_X, 17);
+  doc.text(`Resumen Fondos de Inversión · ${lastP}`, MARGIN_X, 17);
   // Stats a la derecha
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -10946,7 +10946,7 @@ function _generatePdfReport() {
     doc.setTextColor(...COLOR.white);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text(`Ameris AGF · Resumen General · ${lastP}`, MARGIN_X, 6.5);
+    doc.text(`Ameris AGF · Resumen Fondos de Inversión · ${lastP}`, MARGIN_X, 6.5);
     doc.setTextColor(199, 210, 254);
     doc.setFontSize(7);
     doc.text(today, PAGE_W - MARGIN_X, 6.5, { align: 'right' });
@@ -11240,7 +11240,7 @@ function _buildPdfHtml() {
     <div class="pdf-no-break" style="border-bottom:1.5px solid #1F44C5;padding-bottom:8px;display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">
       <div>
         <div style="${S.sub}">Ameris AGF · Análisis CMF Compañías de Seguros</div>
-        <div style="${S.h1}">Resumen General · ${lastP}</div>
+        <div style="${S.h1}">Resumen Fondos de Inversión · ${lastP}</div>
       </div>
       <div style="font-size:9px;color:#6b7280;text-align:right;line-height:1.4">
         ${lastIns} compañías · ${lastAgfs} AGFs · ${periodsLoaded.length} período${periodsLoaded.length !== 1 ? 's' : ''}<br>
