@@ -8392,6 +8392,7 @@ function renderTopDownN3(rut, clase) {
     if (clase === 'b5') return renderTopDownN3_Extranjero(rut, ciaName);
     if (clase === 'b6') return renderTopDownN3_OtrasAlt(rut, ciaName);
     if (clase === 'b7') return renderTopDownN3_Derivados(rut, ciaName);
+    if (clase === 'b8') return renderTopDownN3_Consolidada(rut, ciaName);
   } catch (err) {
     console.error('renderTopDownN3 error:', clase, err);
     return `
@@ -9910,6 +9911,245 @@ function renderTopDownN3_Derivados(rut, ciaName) {
   `;
 }
 
+// Nivel 3 · Composición consolidada (B.8). Toma el último B.8 cargado y muestra
+// el desglose oficial regulatorio: cartera total por familia, distribución de
+// reservas (representadas vs no representadas), uso por sub-cuentas (capital,
+// reservas voluntarias, excedentes, cuentas individuales, filiales/coligadas)
+// y detalle por tipo CMF. Es la "fuente de verdad" oficial de la cía.
+function renderTopDownN3_Consolidada(rut, ciaName) {
+  const all = activeFiles().filter(f => f.insurerRut === rut && f.fileType === 'b8');
+  if (all.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">Sin archivo B.8 cargado para ${escapeHtml(ciaName)}.</div>`;
+  }
+  const lastB8 = all.reduce((a, b) => a.periodo > b.periodo ? a : b);
+  const rawCart = Array.isArray(lastB8.cartera) ? lastB8.cartera : [];
+  if (rawCart.length === 0) {
+    return `<div style="padding:24px;color:var(--c-muted)">El B.8 cargado no tiene posiciones.</div>`;
+  }
+
+  // Re-hidratar familia/tipoDesc si vienen de cache antiguo sin estos campos.
+  const cart = rawCart.map(r => ({
+    ...r,
+    familia: r.familia || (B8_FAMILIAS && B8_FAMILIAS[r.tipo]) || 'Otros',
+    tipoDesc: r.tipoDesc || (B8_TIPOS_INFO && B8_TIPOS_INFO[r.tipo]) || r.tipo,
+  }));
+
+  // KPIs (todo en M$ → CLP)
+  const M = 1000;
+  const sum = (k) => cart.reduce((s, r) => s + ((r[k] || 0) * M), 0);
+  const totVf  = sum('vf');
+  const totRep = sum('rep');
+  const totNorep = sum('norep');
+  const totCa = sum('ca');
+  const totVr = sum('vr');
+  const totEe = sum('ee');
+  const totCui = sum('cui');
+  const totOtr = sum('otr');
+  const totFil = sum('fil');
+  const totCol = sum('col');
+
+  // Distribución por familia
+  const byFam = new Map();
+  for (const r of cart) {
+    const f = r.familia || 'Otros';
+    const cur = byFam.get(f) || { fam: f, total: 0, rep: 0, ca: 0, cui: 0, n: 0 };
+    cur.total += (r.vf || 0) * M;
+    cur.rep += (r.rep || 0) * M;
+    cur.ca += (r.ca || 0) * M;
+    cur.cui += (r.cui || 0) * M;
+    cur.n += 1;
+    byFam.set(f, cur);
+  }
+  const famsSorted = B8_FAMILIA_ORDER
+    .map(f => byFam.get(f))
+    .filter(f => f && f.total !== 0);
+  // Familias fuera del orden estándar
+  for (const [k, v] of byFam) {
+    if (!B8_FAMILIA_ORDER.includes(k) && v.total !== 0) famsSorted.push(v);
+  }
+
+  // Detalle por tipo CMF dentro de cada familia
+  const tiposPorFam = new Map();
+  for (const r of cart) {
+    if ((r.vf || 0) === 0) continue;
+    const f = r.familia || 'Otros';
+    if (!tiposPorFam.has(f)) tiposPorFam.set(f, []);
+    tiposPorFam.get(f).push(r);
+  }
+  for (const tiposArr of tiposPorFam.values()) {
+    tiposArr.sort((a, b) => (b.vf || 0) - (a.vf || 0));
+  }
+
+  // Helper para filas de distribución
+  const distRow = (label, val, total, sublabel, color) => {
+    const pct = total > 0 ? (val / total * 100) : 0;
+    return `
+      <div class="ic-dist-row" style="grid-template-columns:230px 1fr 60px 140px">
+        <span class="ic-dist-name" style="color:${color || 'var(--c-ameris-navy)'}">${escapeHtml(label)}${sublabel ? `<div style="font-size:10.5px;color:var(--c-muted);font-weight:400">${escapeHtml(sublabel)}</div>` : ''}</span>
+        <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color || 'var(--c-ameris-blue)'}"></div></div>
+        <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
+        <span class="ic-dist-val">${fmtMoney(val)}</span>
+      </div>
+    `;
+  };
+
+  const famRows = famsSorted.map(f => distRow(
+    f.fam, f.total, totVf,
+    `${f.n} tipo${f.n !== 1 ? 's' : ''} CMF`,
+    B8_FAMILIA_COLORS[f.fam] || '#7F7F7F'
+  )).join('');
+
+  // Desglose por uso: respaldo de reservas vs otras subcuentas
+  const usoData = [
+    { label: 'Reservas representadas', val: totRep, color: '#1F4E79', help: 'Activos que respaldan reservas técnicas regulatorias' },
+    { label: 'Capital y reservas patrim.', val: totCa, color: '#7030A0', help: 'Capital de la cía. invertido' },
+    { label: 'Reservas voluntarias', val: totVr, color: '#0EA5E9', help: 'Reservas adicionales no exigidas' },
+    { label: 'Excedentes', val: totEe, color: '#10B981', help: 'Excedentes acumulados' },
+    { label: 'Cuentas individuales', val: totCui, color: '#BA7517', help: 'Pensiones (rentas vitalicias y CUI)' },
+    { label: 'Filiales', val: totFil, color: '#5b21b6', help: 'Inversión en sociedades filiales' },
+    { label: 'Coligadas', val: totCol, color: '#a855f7', help: 'Inversión en sociedades coligadas' },
+    { label: 'Otros / no representadas', val: totOtr + totNorep, color: '#9CA3AF', help: 'Excedentes de inversiones y activos no representativos' },
+  ].filter(u => u.val !== 0);
+  const usoRows = usoData.map(u => distRow(u.label, u.val, totVf, u.help, u.color)).join('');
+
+  // Tabla detallada por tipo CMF
+  const tipoDetailHTML = famsSorted.map(fam => {
+    const tipos = tiposPorFam.get(fam.fam) || [];
+    if (tipos.length === 0) return '';
+    const color = B8_FAMILIA_COLORS[fam.fam] || '#7F7F7F';
+    const rows = tipos.map(t => {
+      const vf = (t.vf || 0) * M;
+      const repPct = vf > 0 ? ((t.rep || 0) * M / vf * 100) : 0;
+      return `
+        <tr>
+          <td><span style="background:#f1f5f9;color:#475569;font-size:10.5px;padding:2px 7px;border-radius:3px;font-family:monospace;font-weight:600">${escapeHtml(t.tipo)}</span></td>
+          <td>${escapeHtml(t.tipoDesc || t.tipo)}</td>
+          <td class="num">${fmtMoney(vf)}</td>
+          <td class="num">${totVf > 0 ? (vf / totVf * 100).toFixed(2) : '0.00'}%</td>
+          <td class="num">${repPct.toFixed(0)}%</td>
+        </tr>
+      `;
+    }).join('');
+    return `
+      <details ${fam.total / totVf >= 0.15 ? 'open' : ''} style="margin-bottom:6px">
+        <summary style="cursor:pointer;padding:10px 14px;background:${color}15;border-left:3px solid ${color};border-radius:3px;font-size:13px">
+          <strong style="color:${color}">${escapeHtml(fam.fam)}</strong>
+          <span style="color:var(--c-muted);margin-left:10px">${fmtMoney(fam.total)} · ${totVf > 0 ? (fam.total / totVf * 100).toFixed(1) : '0'}% · ${tipos.length} tipo${tipos.length !== 1 ? 's' : ''}</span>
+        </summary>
+        <div class="table-wrap" style="margin-top:6px">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px">Tipo</th>
+                <th>Descripción</th>
+                <th class="num" style="width:130px">Valor final</th>
+                <th class="num" style="width:90px">% cartera</th>
+                <th class="num" style="width:100px" title="% del valor final que respalda reservas técnicas">% en reservas</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </details>
+    `;
+  }).join('');
+
+  // Top 15 tipos individuales por valor (sin agrupar por familia)
+  const topTipos = cart.slice().filter(r => (r.vf || 0) !== 0)
+    .sort((a, b) => (b.vf || 0) - (a.vf || 0)).slice(0, 15);
+  const topTiposRows = topTipos.map((r, i) => {
+    const vf = (r.vf || 0) * M;
+    const color = B8_FAMILIA_COLORS[r.familia] || '#7F7F7F';
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(r.tipoDesc || r.tipo)}</strong>
+          <span style="background:${color}20;color:${color};font-size:10.5px;padding:2px 7px;border-radius:3px;margin-left:6px">${escapeHtml(r.familia || 'Otros')}</span>
+          <div style="color:var(--c-muted);font-size:11px;font-family:monospace">Código ${escapeHtml(r.tipo)}</div>
+        </td>
+        <td class="num">${fmtMoney(vf)}</td>
+        <td class="num">${totVf > 0 ? (vf / totVf * 100).toFixed(2) : '0.00'}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#F0FDF4 100%);border-color:var(--c-ameris-navy)">
+      <strong style="color:var(--c-ameris-navy)">Nivel 3 · ${escapeHtml(ciaName)} · Composición consolidada</strong>
+      · Cierre ${fmtPeriod(lastB8.periodo)} · Archivo B.8 con ${cart.length} tipo${cart.length !== 1 ? 's' : ''} CMF · <strong>Fuente regulatoria oficial</strong>
+    </div>
+
+    <div style="background:#dbeafe;border-left:4px solid #1d4ed8;padding:10px 14px;border-radius:4px;margin:14px 0;font-size:12px;color:#1e3a8a">
+      <strong>¿Qué es B.8?</strong> Es la composición de cartera consolidada según la Circular CMF N° 1.835 — la "fuente de verdad" oficial. Cada fila es un tipo CMF (A00, B10, etc.) con su valor final y cuánto está representando reservas técnicas vs capital, excedentes, cuentas individuales o filiales/coligadas. Los demás archivos detalle (B.1, B.2, etc.) deberían sumar este total.
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0">
+      <div style="background:#f8fafc;border:1px solid var(--c-border);border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:var(--c-muted);text-transform:uppercase;letter-spacing:0.3px">AUM cartera B.8</div>
+        <div style="font-size:22px;font-weight:700;color:var(--c-ameris-blue)">${fmtMoney(totVf)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${famsSorted.length} familias · ${cart.length} tipos CMF</div>
+      </div>
+      <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:#1e3a8a;text-transform:uppercase;letter-spacing:0.3px">Reservas técnicas</div>
+        <div style="font-size:22px;font-weight:700;color:#1F4E79">${fmtMoney(totRep)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">${totVf > 0 ? (totRep / totVf * 100).toFixed(1) : '0'}% de la cartera respalda reservas</div>
+      </div>
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:#92400e;text-transform:uppercase;letter-spacing:0.3px">Cuentas individuales</div>
+        <div style="font-size:22px;font-weight:700;color:#BA7517">${fmtMoney(totCui)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">Rentas vitalicias y CUI · ${totVf > 0 ? (totCui / totVf * 100).toFixed(1) : '0'}%</div>
+      </div>
+      <div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:4px;padding:12px 14px">
+        <div style="font-size:10.5px;color:#5b21b6;text-transform:uppercase;letter-spacing:0.3px">Capital + Excedentes</div>
+        <div style="font-size:22px;font-weight:700;color:#7030A0">${fmtMoney(totCa + totEe + totVr)}</div>
+        <div style="font-size:10.5px;color:var(--c-muted)">Capital, reservas voluntarias y excedentes</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">Distribución por familia regulatoria</div></div>
+      <div style="padding:14px 18px">
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">
+          Las familias agrupan los tipos CMF según naturaleza económica: <strong>Renta fija</strong> (bonos, depósitos, letras), <strong>Renta fija extranjera</strong>, <strong>Renta variable</strong> (acciones), <strong>CFI/Fondos mutuos/Fondos extranjeros</strong>, <strong>Bienes raíces</strong>, <strong>Liquidez</strong> (caja, cuentas corrientes), <strong>Derivados</strong>, <strong>Filiales/Coligadas</strong>.
+        </div>
+        <div class="ic-dist-list">${famRows}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Uso de la cartera (a qué se asigna cada activo)</div></div>
+      <div style="padding:14px 18px">
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">
+          Cada activo de la cía. está clasificado contablemente según qué pasivo respalda. <strong>Reservas técnicas</strong> son las exigidas por el regulador (calce de pólizas vendidas). <strong>Cuentas individuales</strong> = rentas vitalicias y CUI (pensiones). <strong>Capital + excedentes</strong> = recursos propios. Suma = valor final total.
+        </div>
+        <div class="ic-dist-list">${usoRows || '<div style="color:var(--c-muted);font-size:12px">Sin datos.</div>'}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Top 15 tipos CMF por valor</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Tipo</th><th class="num">Valor final</th><th class="num">% cartera</th></tr>
+          </thead>
+          <tbody>${topTiposRows}</tbody>
+        </table>
+      </div>
+      ${cart.length > 15 ? `<div style="padding:10px 18px;font-size:12px;color:var(--c-muted)">Mostrando 15 de ${cart.length} tipos CMF.</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header"><div class="card-title">Detalle completo por familia</div></div>
+      <div style="padding:12px 18px">
+        <div style="font-size:11.5px;color:var(--c-muted);margin-bottom:10px">Familias con &gt;15% de la cartera abren por defecto. La columna <strong>% en reservas</strong> indica qué porcentaje de cada tipo respalda reservas técnicas regulatorias (vs capital o cuentas individuales).</div>
+        ${tipoDetailHTML}
+      </div>
+    </div>
+  `;
+}
+
 // Para una cía., devuelve su última foto consolidada combinando B.1..B.8.
 // B.8 manda como fuente de verdad si está cargado. Si no, se suman los
 // archivos detalle disponibles (con banner indicando fallback).
@@ -10106,8 +10346,8 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   // Mapeo Tipo (B.1/B.2/...) → clase (b1/b2/...) para el state del Nivel 3.
   // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
   // construcción — mostramos un indicador visual claro de ambos estados.
-  const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7' };
-  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5', 'b6', 'b7']);
+  const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7', 'B.8':'b8' };
+  const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5', 'b6', 'b7', 'b8']);
   const archivoRows = cart.archivos.map(a => {
     const clase = tipoToClase[a.tipo];
     const isReady = a.presente && clase && CLASES_LISTAS.has(clase);
@@ -10160,6 +10400,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
         b5: 'Extranjero (B.5)',
         b6: 'Otras + Alternativos (B.6)',
         b7: 'Derivados (B.7)',
+        b8: 'Composición consolidada (B.8)',
       };
       const claseLabel = claseLabelMap[TOPDOWN_INNER_CLASE] || TOPDOWN_INNER_CLASE.toUpperCase();
       innerPanel = `
