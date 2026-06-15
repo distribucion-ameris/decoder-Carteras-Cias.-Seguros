@@ -8414,17 +8414,28 @@ function renderTopDownN3_RentaFija(rut, ciaName) {
 
   const tipoRows = tiposSorted.map(t => distRow(`${t.tipo} · ${t.desc}`, t.total, totalCLP, `${t.n} instrumentos`)).join('');
   const monedaRows = monedasSorted.map(m => distRow(m.moneda, m.total, totalCLP, '')).join('');
-  const emisorRows = topEmisores.map((e, i) => `
-    <tr>
-      <td class="num">${i + 1}</td>
-      <td>
-        <strong>${escapeHtml(fmtRut(e.rut))}</strong>
-        <div style="color:var(--c-muted);font-size:11px">${e.n} instrumento${e.n !== 1 ? 's' : ''} · ${e.tipos.size} tipo${e.tipos.size !== 1 ? 's' : ''}</div>
-      </td>
-      <td class="num">${fmtMoney(e.total)}</td>
-      <td class="num">${totalCLP > 0 ? (e.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
-    </tr>
-  `).join('');
+  const emisorRows = topEmisores.map((e, i) => {
+    // Resolver nombre: canonicalAgfName usa RUT_AGF_MAP + USER_OVERRIDES +
+    // COMMUNITY_OVERRIDES. Si el RUT no está mapeado devuelve '(RUT XX.XXX.XXX-X)'
+    // — en ese caso mostramos solo el RUT formateado como nombre principal.
+    const resolvedName = canonicalAgfName(e.rut);
+    const isUnmapped = /^\(RUT /.test(resolvedName);
+    const displayName = isUnmapped ? fmtRut(e.rut) : resolvedName;
+    const subInfo = isUnmapped
+      ? `${e.n} instrumento${e.n !== 1 ? 's' : ''} · ${e.tipos.size} tipo${e.tipos.size !== 1 ? 's' : ''} · sin nombre mapeado`
+      : `RUT ${fmtRut(e.rut)} · ${e.n} instrumento${e.n !== 1 ? 's' : ''} · ${e.tipos.size} tipo${e.tipos.size !== 1 ? 's' : ''}`;
+    return `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(displayName)}</strong>
+          <div style="color:var(--c-muted);font-size:11px">${escapeHtml(subInfo)}</div>
+        </td>
+        <td class="num">${fmtMoney(e.total)}</td>
+        <td class="num">${totalCLP > 0 ? (e.total / totalCLP * 100).toFixed(2) : '0.00'}%</td>
+      </tr>
+    `;
+  }).join('');
 
   return `
     <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">

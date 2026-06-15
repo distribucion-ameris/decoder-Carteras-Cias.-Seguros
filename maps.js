@@ -74,6 +74,8 @@ window.RUT_AGF_MAP = {
   "096980650-9": "Itaú Chile AGF",
   "076798260-7": "Quest Capital AGF",
   "076503272-5": "WEG Chile AGF",
+  "060805000-0": "Tesorería General de la República",
+  "097029000-K": "Banco Central de Chile",
   "076551925-K": "Altis AGF",
   "076930595-5": "VanTrust Capital AGF",
   "077060806-6": "Aspen Capital AGF",
