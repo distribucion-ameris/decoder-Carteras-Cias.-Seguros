@@ -4551,6 +4551,14 @@ function fmtMoneyFull(n) {
   if (!n && n !== 0) return '—';
   return Math.round(n).toLocaleString('es-CL');
 }
+// Siempre formatea en billones (B = 10^12) con 2 decimales — usado en el Top
+// Down por sistema para que todas las cifras (AUM hero, familias, ranking de
+// cías.) compartan la misma escala visual aunque las cías. chicas se vean
+// como "0.05 B" en lugar de "50 MM".
+function fmtMoneyB(n) {
+  if (!n && n !== 0) return '—';
+  return (n / 1e12).toFixed(2) + ' B';
+}
 function fmtNumber(n, d=0) {
   if (!n && n !== 0) return '—';
   return n.toLocaleString('es-CL', { maximumFractionDigits: d, minimumFractionDigits: d });
@@ -10719,7 +10727,7 @@ function renderTopDown() {
         <span class="ic-dist-name" style="color:${color}">${escapeHtml(fam.familia)}</span>
         <div class="ic-dist-bar"><div class="ic-dist-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
         <span class="ic-dist-pct">${pct.toFixed(1)}%</span>
-        <span class="ic-dist-val">${fmtMoney(fam.total)}</span>
+        <span class="ic-dist-val">${fmtMoneyB(fam.total)}</span>
       </div>
     `;
   }).join('');
@@ -10750,7 +10758,7 @@ function renderTopDown() {
           <span style="color:${chevronColor};margin-left:6px;font-size:11px">${chevron}</span>
           <div style="color:var(--c-muted);font-size:11px">RUT ${fmtRut(c.rut)} · ${fmtPeriod(c.periodo)}</div>
         </td>
-        <td class="num">${fmtMoney(c.total)}</td>
+        <td class="num">${fmtMoneyB(c.total)}</td>
         <td class="num">${pct.toFixed(2)}%</td>
       </tr>
       ${isOpen ? `<tr><td colspan="4" style="background:#f8fafc;padding:0">
@@ -10762,7 +10770,7 @@ function renderTopDown() {
   container.innerHTML = `
     <div style="background:linear-gradient(135deg,var(--c-ameris-navy) 0%,var(--c-ameris-blue) 100%);color:white;border-radius:10px;padding:24px 28px;margin-bottom:16px;box-shadow:0 4px 14px rgba(10,43,94,0.18)">
       <div style="font-size:11.5px;color:rgba(255,255,255,0.78);letter-spacing:0.8px;text-transform:uppercase;margin-bottom:6px">AUM consolidado del sistema asegurador</div>
-      <div style="font-size:42px;font-weight:800;line-height:1.1;letter-spacing:-0.5px">${fmtMoney(sysTotal)}</div>
+      <div style="font-size:42px;font-weight:800;line-height:1.1;letter-spacing:-0.5px">${fmtMoneyB(sysTotal)}</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:8px">
         <strong>${insurerRanking.length}</strong> compañías con B.8 cargado ·
         última foto disponible por aseguradora (más reciente: <strong>${fmtPeriod(lastP)}</strong>)
