@@ -3949,16 +3949,33 @@ function classifyFundManager(rec) {
 function canonicalAgfRut(rut) {
   return AGF_MERGE_MAP[rut] || rut;
 }
+// Padea un RUT a 9 dígitos para compatibilidad con maps.js (que siempre usa
+// el formato 9-dígitos con ceros al inicio: "061808000-5"). Algunos parsers
+// (parseB1Detail, parseB7Pacto) quitan los 0 iniciales: "61808000-5".
+function padRut(rut) {
+  if (!rut) return rut;
+  const m = String(rut).match(/^(\d+)-([0-9Kk])$/);
+  if (!m) return rut;
+  return m[1].padStart(9, '0') + '-' + m[2].toUpperCase();
+}
 function canonicalAgfName(rut) {
   const cr = canonicalAgfRut(rut);
+  const pr = padRut(rut);
+  const pcr = padRut(cr);
   // Prioridad 0a: override del usuario
   if (USER_OVERRIDES.rutAgfs && USER_OVERRIDES.rutAgfs[rut]) return USER_OVERRIDES.rutAgfs[rut];
   if (USER_OVERRIDES.rutAgfs && USER_OVERRIDES.rutAgfs[cr]) return USER_OVERRIDES.rutAgfs[cr];
+  if (USER_OVERRIDES.rutAgfs && USER_OVERRIDES.rutAgfs[pr]) return USER_OVERRIDES.rutAgfs[pr];
   // Prioridad 0b: comunitarias
   if (COMMUNITY_OVERRIDES.rutAgfs && COMMUNITY_OVERRIDES.rutAgfs[rut]) return COMMUNITY_OVERRIDES.rutAgfs[rut];
   if (COMMUNITY_OVERRIDES.rutAgfs && COMMUNITY_OVERRIDES.rutAgfs[cr]) return COMMUNITY_OVERRIDES.rutAgfs[cr];
+  if (COMMUNITY_OVERRIDES.rutAgfs && COMMUNITY_OVERRIDES.rutAgfs[pr]) return COMMUNITY_OVERRIDES.rutAgfs[pr];
   return (window.RUT_AGF_MAP && window.RUT_AGF_MAP[cr])
       || (window.RUT_AGF_MAP && window.RUT_AGF_MAP[rut])
+      || (window.RUT_AGF_MAP && window.RUT_AGF_MAP[pcr])
+      || (window.RUT_AGF_MAP && window.RUT_AGF_MAP[pr])
+      || (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[pcr])
+      || (INSURER_NAME_OVERRIDES && INSURER_NAME_OVERRIDES[pr])
       || `(RUT ${fmtRut(cr)})`;
 }
 
