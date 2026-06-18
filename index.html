@@ -2135,19 +2135,84 @@ function fixUtf8(s) {
 
 // Manual overrides for insurer names — fixes misspellings, prefixes or missing
 // diacritics in the source files. Key = full RUT with DV (9-digit padded + DV).
+// Nombres oficiales de aseguradoras chilenas — extraído del header tipo 1 de
+// los archivos B.1-B.8 (CMF). Útil tanto como override de nombre de cía. en
+// el dashboard como para resolver RUTs que aparecen como EMISOR de bonos
+// hipotecarios en B.1 de otras cías. (las mutuarias emiten papel propio).
 const INSURER_NAME_OVERRIDES = {
-  '096579280-5': 'CN LIFE COMPAÑÍA DE SEGUROS DE VIDA S.A.',
-  '099289000-2': 'METLIFE CHILE SEGUROS DE VIDA SA',
-  '076632384-7': 'AUGUSTAR SEGUROS DE VIDA S.A.',
-  '096549050-7': 'SURA SEGUROS DE VIDA',  // missing TIPO=1 header in source files
+  '070015730-K': 'Mutual de Seguros de Chile',
+  '076034737-K': 'SAVE BCJ Seguros de Vida S.A.',
+  '076213329-6': 'HELP Seguros de Vida S.A.',
+  '076263414-7': 'Seguros de Vida Suramericana S.A.',
+  '076282191-5': 'BUPA Compañía de Seguros de Vida S.A.',
+  '076408757-7': 'Colmena Compañía de Seguros de Vida S.A.',
+  '076418751-2': '4 Life Seguros de Vida S.A.',
+  '076477116-8': 'CF Seguros de Vida S.A.',
+  '076511423-3': 'Alemana Seguros S.A.',
+  '076573480-0': 'Seguros CLC S.A.',
+  '076632384-7': 'Augustar Seguros de Vida S.A.',
+  '076632553-K': 'UCChristus Seguros de Vida y Salud S.A.',
+  '077205281-2': 'Divina Pastora Seguros de Vida S.A.',
+  '094716000-1': 'Renta Nacional Seguros de Vida S.A.',
+  '096549050-7': 'Seguros de Vida SURA S.A.',
+  '096571890-7': 'Compañía de Seguros Confuturo S.A.',
+  '096573600-K': 'BCI Vida Compañía de Seguros',
+  '096579280-5': 'CN Life Compañía de Seguros de Vida S.A.',
+  '096588080-1': 'Principal Cía. de Seguros de Vida Chile S.A.',
+  '096656410-5': 'BICE Vida Compañía de Seguros S.A.',
+  '096812960-0': 'Penta Vida Compañía de Seguros',
+  '096819630-8': 'Zurich Santander Seguros de Vida S.A.',
+  '096837630-6': 'BNP Paribas Cardif Seguros de Vida S.A.',
+  '096933030-K': 'Mapfre Compañía de Seguros de Vida de Chile S.A.',
+  '099003000-6': 'Compañía de Seguros de Vida Cámara S.A.',
+  '099012000-5': 'Consorcio Nacional de Seguros Vida S.A.',
+  '099024000-0': 'Mutualidad de Carabineros Seguros de Vida',
+  '099025000-6': 'Mutualidad del Ejército y Aviación',
+  '099185000-7': 'Chilena Consolidada Seguros de Vida S.A.',
+  '099225000-3': 'Chubb Seguros Chile S.A.',
+  '099279000-8': 'EuroAmerica Seguros de Vida S.A.',
+  '099289000-2': 'MetLife Chile Seguros de Vida S.A.',
+  '099588060-1': 'Chubb Seguros de Vida Chile S.A.',
+  // Aliases adicionales (mutuarias / filiales que aparecen como emisor en B.1)
+  '099514870-6': 'MetLife Mutuaria S.A.',
 };
 
 // Fallback names for files that arrive with no identification record (TIPO=1 missing
 // or otherwise unreadable). Keyed by the digits portion of the filename (right of the dot).
 const FILENAME_RUT_TO_INSURER = {
-  '96549050': 'SURA SEGUROS DE VIDA',
-  '96579280': 'CN LIFE COMPAÑÍA DE SEGUROS DE VIDA S.A.',
-  '99289000': 'METLIFE CHILE SEGUROS DE VIDA SA',
+  '70015730': 'Mutual de Seguros de Chile',
+  '76034737': 'SAVE BCJ Seguros de Vida S.A.',
+  '76213329': 'HELP Seguros de Vida S.A.',
+  '76263414': 'Seguros de Vida Suramericana S.A.',
+  '76282191': 'BUPA Compañía de Seguros de Vida S.A.',
+  '76408757': 'Colmena Compañía de Seguros de Vida S.A.',
+  '76418751': '4 Life Seguros de Vida S.A.',
+  '76477116': 'CF Seguros de Vida S.A.',
+  '76511423': 'Alemana Seguros S.A.',
+  '76573480': 'Seguros CLC S.A.',
+  '76632384': 'Augustar Seguros de Vida S.A.',
+  '76632553': 'UCChristus Seguros de Vida y Salud S.A.',
+  '77205281': 'Divina Pastora Seguros de Vida S.A.',
+  '94716000': 'Renta Nacional Seguros de Vida S.A.',
+  '96549050': 'Seguros de Vida SURA S.A.',
+  '96571890': 'Compañía de Seguros Confuturo S.A.',
+  '96573600': 'BCI Vida Compañía de Seguros',
+  '96579280': 'CN Life Compañía de Seguros de Vida S.A.',
+  '96588080': 'Principal Cía. de Seguros de Vida Chile S.A.',
+  '96656410': 'BICE Vida Compañía de Seguros S.A.',
+  '96812960': 'Penta Vida Compañía de Seguros',
+  '96819630': 'Zurich Santander Seguros de Vida S.A.',
+  '96837630': 'BNP Paribas Cardif Seguros de Vida S.A.',
+  '96933030': 'Mapfre Compañía de Seguros de Vida de Chile S.A.',
+  '99003000': 'Compañía de Seguros de Vida Cámara S.A.',
+  '99012000': 'Consorcio Nacional de Seguros Vida S.A.',
+  '99024000': 'Mutualidad de Carabineros Seguros de Vida',
+  '99025000': 'Mutualidad del Ejército y Aviación',
+  '99185000': 'Chilena Consolidada Seguros de Vida S.A.',
+  '99225000': 'Chubb Seguros Chile S.A.',
+  '99279000': 'EuroAmerica Seguros de Vida S.A.',
+  '99289000': 'MetLife Chile Seguros de Vida S.A.',
+  '99588060': 'Chubb Seguros de Vida Chile S.A.',
 };
 
 // Chilean RUT verifier-digit algorithm (Módulo 11 with weights 2..7 cycling).
