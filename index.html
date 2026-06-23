@@ -10265,10 +10265,13 @@ function carteraConsolidadaTopDown(rut) {
   let source = 'b8';
 
   if (lastB8) {
+    // B.8 vf en M$ → multiplicar por 1000 para CLP literales, consistente con
+    // los detalles (B.1-B.7) que ya producen valorFinalCLP / valorFinal en CLP.
     for (const e of (lastB8.cartera || [])) {
       const fam = e.familia || 'Otros';
-      byFamilia[fam] = (byFamilia[fam] || 0) + (e.vf || 0);
-      totalAUM += e.vf || 0;
+      const vCLP = (e.vf || 0) * 1000;
+      byFamilia[fam] = (byFamilia[fam] || 0) + vCLP;
+      totalAUM += vCLP;
     }
   } else {
     source = 'detalle';
@@ -10316,7 +10319,7 @@ function carteraConsolidadaTopDown(rut) {
     { tipo:'B.7', desc:'Derivados (MTM)', presente:!!lastB7, n:lastB7?(lastB7.b7Records||[]).length:0, periodo:lastB7?.periodo,
       total:lastB7 ? (lastB7.b7Records||[]).reduce((s,r)=>s+(r.valorFinalCLP||0),0) : 0 },
     { tipo:'B.8', desc:'Composición consolidada', presente:!!lastB8, n:lastB8?(lastB8.cartera||[]).length:0, periodo:lastB8?.periodo,
-      total:lastB8 ? (lastB8.cartera||[]).reduce((s,e)=>s+(e.vf||0),0) : 0 },
+      total:lastB8 ? (lastB8.cartera||[]).reduce((s,e)=>s+((e.vf||0)*1000),0) : 0 },
   ];
 
   let reconciliacion = null;
@@ -10640,6 +10643,10 @@ function renderTopDown() {
   for (const fam of B8_FAMILIA_ORDER) {
     familyMap.set(fam, { familia: fam, total: 0, insurers: new Set(), tipos: new Set() });
   }
+  // B.8 vf viene en M$ (miles de pesos) — multiplicamos por 1000 para mostrar
+  // en CLP literales y que las cifras de fmtMoneyB sean coherentes (el sistema
+  // asegurador chileno tiene ~80 BB CLP, no 80 mil millones).
+  const M = 1000;
   let sysTotal = 0;
   for (const f of snapshotFiles) {
     const cartera = Array.isArray(f.cartera) ? f.cartera : [];
@@ -10651,10 +10658,10 @@ function renderTopDown() {
         slot = { familia: fam, total: 0, insurers: new Set(), tipos: new Set() };
         familyMap.set(fam, slot);
       }
-      slot.total += e.vf || 0;
+      slot.total += (e.vf || 0) * M;
       if (e.tipo) slot.tipos.add(e.tipo);
       if (f.insurerRut) slot.insurers.add(f.insurerRut);
-      sysTotal += e.vf || 0;
+      sysTotal += (e.vf || 0) * M;
     }
   }
   const families = Array.from(familyMap.values())
@@ -10665,7 +10672,7 @@ function renderTopDown() {
   const insurerMap = new Map();
   for (const f of snapshotFiles) {
     const cartera = Array.isArray(f.cartera) ? f.cartera : [];
-    const t = cartera.reduce((s, e) => s + ((e && e.vf) || 0), 0);
+    const t = cartera.reduce((s, e) => s + (((e && e.vf) || 0) * M), 0);
     insurerMap.set(f.insurerRut, { rut: f.insurerRut, name: f.insurerName, total: t, periodo: f.periodo });
   }
   const insurerRanking = Array.from(insurerMap.values())
