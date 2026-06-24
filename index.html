@@ -1401,6 +1401,246 @@
     border-radius: 999px;
   }
   .cell-bar .num { min-width: 56px; text-align: right; font-weight: 600; color: var(--c-ameris-blue); }
+  /* ─────────────────────────── Modal flotante reutilizable ────────────────────────
+     Patrón "lista → modal centrado" usado por Por compañía aseguradora y Por
+     administradora. Espeja al drill-down N3 de Top Down (topdown-inner-overlay)
+     para consistencia. Soporta modal-en-modal apilado (drill a fondo individual)
+     con z-index incremental.
+     ─────────────────────────────────────────────────────────────────────────────── */
+  .ameris-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    backdrop-filter: blur(3px);
+    animation: ameris-modal-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ameris-modal-overlay.is-nested {
+    z-index: 9100;
+    background: rgba(15, 23, 42, 0.35);
+  }
+  @keyframes ameris-modal-fade-in {
+    from { opacity: 0; backdrop-filter: blur(0); }
+    to   { opacity: 1; backdrop-filter: blur(3px); }
+  }
+  .ameris-modal-panel {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+    width: min(1100px, 100%);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: ameris-modal-panel-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ameris-modal-panel.is-nested { width: min(820px, 100%); }
+  @keyframes ameris-modal-panel-in {
+    from { transform: translateY(8px) scale(0.98); opacity: 0; }
+    to   { transform: translateY(0)   scale(1);    opacity: 1; }
+  }
+  .ameris-modal-header {
+    background: linear-gradient(135deg, var(--c-ameris-blue) 0%, var(--c-ameris-navy) 100%);
+    color: white;
+    padding: 16px 24px;
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .ameris-modal-eyebrow {
+    font-size: var(--fs-eyebrow);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+    font-weight: var(--fw-eyebrow);
+    margin-bottom: 4px;
+  }
+  .ameris-modal-title {
+    font-size: var(--fs-h2);
+    font-weight: var(--fw-h2);
+    line-height: 1.2;
+  }
+  .ameris-modal-nav-btn {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: white;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: var(--fs-meta);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: inherit;
+  }
+  .ameris-modal-nav-btn:hover { background: rgba(255,255,255,0.28); }
+  .ameris-modal-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ameris-modal-close {
+    background: rgba(255,255,255,0.18);
+    border: none;
+    color: white;
+    border-radius: 6px;
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .ameris-modal-close:hover { background: rgba(255,255,255,0.32); }
+  .ameris-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 24px;
+    background: #f8fafc;
+  }
+  .ameris-modal-body.is-loading { opacity: 0.55; transition: opacity 120ms; }
+  /* Tarjeta simplificada de listado (1 línea, sin expand inline) */
+  .entity-row {
+    display: grid;
+    grid-template-columns: 32px 1fr auto auto 24px;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 18px;
+    background: white;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+    margin-bottom: 8px;
+  }
+  .entity-row:hover {
+    border-color: var(--c-ameris-blue);
+    box-shadow: 0 4px 14px rgba(31, 68, 197, 0.08);
+    transform: translateY(-1px);
+  }
+  .entity-row.is-active {
+    border-color: var(--c-ameris-blue);
+    background: var(--c-ameris-soft);
+  }
+  .entity-row__rank {
+    font-size: var(--fs-meta);
+    font-weight: 700;
+    color: var(--c-muted);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .entity-row__name {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .entity-row__name strong {
+    font-size: var(--fs-h2);
+    font-weight: var(--fw-h2);
+    color: var(--c-ameris-navy);
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .entity-row__sub {
+    font-size: var(--fs-meta);
+    color: var(--c-muted);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .entity-row__metric {
+    text-align: right;
+    min-width: 110px;
+  }
+  .entity-row__metric-value {
+    font-size: var(--fs-kpi-value);
+    font-weight: var(--fw-kpi);
+    color: var(--c-ameris-blue);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .entity-row__metric-sub {
+    font-size: var(--fs-meta);
+    color: var(--c-muted);
+    margin-top: 2px;
+  }
+  .entity-row__chip {
+    font-size: var(--fs-eyebrow);
+    color: var(--c-muted);
+    font-weight: var(--fw-eyebrow);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: var(--c-ameris-soft);
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+  .entity-row__arrow {
+    color: var(--c-muted);
+    font-size: 18px;
+    text-align: center;
+    transition: color 0.12s, transform 0.12s;
+  }
+  .entity-row:hover .entity-row__arrow {
+    color: var(--c-ameris-blue);
+    transform: translateX(2px);
+  }
+  /* KPI grid del modal (4 KPIs cohesionados, no 5-7 como antes) */
+  .modal-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 900px) {
+    .modal-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  .modal-kpi {
+    background: white;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: box-shadow 0.12s, border-color 0.12s;
+  }
+  .modal-kpi:hover {
+    border-color: var(--c-ameris-blue);
+    box-shadow: 0 2px 8px rgba(31, 68, 197, 0.10);
+  }
+  .modal-kpi.is-hero {
+    background: linear-gradient(135deg, var(--c-ameris-soft) 0%, white 100%);
+    border-color: var(--c-ameris-pale);
+  }
+  .modal-kpi__label {
+    font-size: var(--fs-eyebrow);
+    color: var(--c-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+    font-weight: var(--fw-eyebrow);
+  }
+  .modal-kpi__value {
+    font-size: var(--fs-kpi-value);
+    font-weight: var(--fw-kpi);
+    color: var(--c-ameris-navy);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .modal-kpi.is-hero .modal-kpi__value {
+    font-size: var(--fs-h1);
+    color: var(--c-ameris-blue);
+  }
+  .modal-kpi__sub {
+    font-size: var(--fs-meta);
+    color: var(--c-muted);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
   /* Help notice — soft Ameris blue card */
   .notice {
     background: linear-gradient(135deg, var(--c-ameris-soft) 0%, white 100%);
@@ -4090,6 +4330,77 @@ function isAmerisRut(rut) {
   return /ameris/i.test(name);
 }
 
+/* ─────────────────────────── Helpers: pila de modales flotantes ────────────────
+   Mecanismo común para todos los modales (.ameris-modal-overlay) que evita el
+   bug actual de #kpi-modal donde body.style.overflow no se restauraba.
+   - openModal(id, html, opts)  monta el overlay en document.body y bloquea scroll
+   - closeTopModal()            cierra el último abierto (ESC, backdrop, ✕)
+   - closeAllModals()           cierra toda la pila (al cambiar de tab del dashboard)
+   - El stack count gestiona body.style.overflow: lock al primer push, unlock al
+     llegar a 0 — soporta apilado (modal-en-modal) sin liberar prematuro.
+   ────────────────────────────────────────────────────────────────────────────── */
+const MODAL_STACK = [];
+let _modalEscWired = false;
+
+function _ensureModalEscHandler() {
+  if (_modalEscWired) return;
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (MODAL_STACK.length === 0) return;
+    e.preventDefault();
+    closeTopModal();
+  });
+  _modalEscWired = true;
+}
+
+function openModal(id, html, opts) {
+  opts = opts || {};
+  _ensureModalEscHandler();
+  // Cierra cualquier modal previo con el mismo id (idempotente)
+  const prev = document.getElementById(id);
+  if (prev) {
+    const idx = MODAL_STACK.findIndex(m => m.id === id);
+    if (idx >= 0) MODAL_STACK.splice(idx, 1);
+    prev.remove();
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'ameris-modal-overlay' + (opts.nested ? ' is-nested' : '');
+  overlay.id = id;
+  overlay.innerHTML = `<div class="ameris-modal-panel${opts.nested ? ' is-nested' : ''}" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${html}</div>`;
+  overlay.addEventListener('click', () => closeTopModal());
+  document.body.appendChild(overlay);
+  if (MODAL_STACK.length === 0) {
+    document.body.style.overflow = 'hidden';
+  }
+  MODAL_STACK.push({ id, onClose: opts.onClose || null });
+  if (opts.onMount) {
+    // Microtask: permite que el DOM ya esté montado antes del wiring
+    setTimeout(() => opts.onMount(overlay), 0);
+  }
+  return overlay;
+}
+
+function closeTopModal() {
+  const top = MODAL_STACK.pop();
+  if (!top) return;
+  const el = document.getElementById(top.id);
+  if (el) el.remove();
+  if (MODAL_STACK.length === 0) {
+    document.body.style.overflow = '';
+  }
+  if (top.onClose) {
+    try { top.onClose(); } catch (e) { console.warn('modal onClose error:', e); }
+  }
+}
+
+function closeAllModals() {
+  while (MODAL_STACK.length) closeTopModal();
+}
+
+function isModalOpen(id) {
+  return MODAL_STACK.some(m => m.id === id);
+}
+
 const STORAGE_KEY = 'ameris-b2-dashboard-v1';
 
 // Slim a B.5 record for storage: keep only fields that aren't recomputable on load.
@@ -5005,6 +5316,7 @@ function aggregateByInsurer(holdings) {
         valBolsa: 0,
         valLibro: 0,
         catBreakdown: {},
+        _fundsSet: new Set(),
       });
     }
     const e = map.get(key);
@@ -5013,6 +5325,11 @@ function aggregateByInsurer(holdings) {
     e.valLibro += h.valLibro;
     const cat = h.category;
     e.catBreakdown[cat] = (e.catBreakdown[cat] || 0) + h.valLibro;
+    e._fundsSet.add((h.nemo || '') + '||' + (h.serie || ''));
+  }
+  for (const e of map.values()) {
+    e.fundsCount = e._fundsSet.size;
+    delete e._fundsSet;
   }
   return Array.from(map.values()).sort((a, b) => b.valLibro - a.valLibro);
 }
@@ -6056,9 +6373,11 @@ function _wireIcStatClicks(rootEl, ctx) {
   });
 }
 
-// Estado: qué AGF está expandida + búsqueda. Mismo patrón que Por Compañía.
+// Estado: qué AGF está abierta en el modal + búsqueda. Mismo patrón que
+// Por compañía aseguradora.
 let AGF_OPEN_RUT = '';
 let AGF_SEARCH = '';
+let AGF_MODAL_ORDER = [];
 
 function renderAGF() {
   const hsAll = activeHoldings();
@@ -6076,57 +6395,48 @@ function renderAGF() {
     return;
   }
 
-  // Búsqueda por nombre o RUT
   const q = AGF_SEARCH.trim().toLowerCase();
   const filtered = q
     ? list.filter(a => (a.agf || '').toLowerCase().includes(q) || (a.rut || '').includes(q))
     : list;
+  AGF_MODAL_ORDER = filtered.map(a => a.rut);
 
-  // Cards (mismo patrón que insurer-card)
-  const cards = filtered.map(a => {
+  // Card simplificada: 1 línea con nombre + Val. Libro + % sistema + chip
+  // "X fondos / Y clientes". Click abre el modal flotante.
+  const cards = filtered.map((a, i) => {
     const isOpen = a.rut === AGF_OPEN_RUT;
-    const pct = a.valLibro / totalSys * 100;
     const isAmeris = isAmerisRut(a.rut);
+    const pct = a.valLibro / totalSys * 100;
     return `
-      <div class="insurer-card ${isOpen ? 'open' : ''}${isAmeris ? ' is-ameris' : ''}" data-rut="${a.rut}">
-        <div class="insurer-card-head" data-rut="${a.rut}">
-          <div class="ic-name">
-            <span class="ic-chevron">▶</span>
-            <div>
-              <strong>${escapeHtml(a.agf)}</strong>${isAmeris ? ' <span class="badge cfi" style="margin-left:6px">Ameris</span>' : ''}
-              <div class="ic-sub">RUT ${fmtRut(a.rut)} · ${a.fundsCount} fondo${a.fundsCount !== 1 ? 's' : ''} · ${a.insurersCount} cía${a.insurersCount !== 1 ? 's' : ''} · ${a.positions} posiciones</div>
-            </div>
-          </div>
-          <div class="ic-stats">
-            <div class="ic-stat-val">${fmtMoney(a.valLibro)}</div>
-            <div class="ic-stat-pct">${pct.toFixed(2)}% sistema</div>
-          </div>
-          <div class="ic-cats">
-            <span class="ic-cat-chip">${a.fundsCount} fondos</span>
-            <span class="ic-cat-chip">${a.insurersCount} clientes</span>
-          </div>
+      <div class="entity-row${isOpen ? ' is-active' : ''}${isAmeris ? ' is-ameris' : ''}" data-rut="${escapeHtml(a.rut)}" role="button" tabindex="0">
+        <div class="entity-row__rank">${i + 1}</div>
+        <div class="entity-row__name">
+          <strong>${escapeHtml(a.agf)}${isAmeris ? ' <span class="badge cfi" style="margin-left:6px;font-size:var(--fs-badge);font-weight:var(--fw-badge);padding:2px 8px;border-radius:999px;background:var(--c-ameris-blue);color:white">Ameris</span>' : ''}</strong>
+          <div class="entity-row__sub">RUT ${fmtRut(a.rut)} · ${a.insurersCount} cliente${a.insurersCount !== 1 ? 's' : ''}</div>
         </div>
-        <div class="insurer-card-body" id="agf-body-${a.rut.replace(/[^A-Za-z0-9-]/g, '_')}">
-          ${isOpen ? renderAGFCardBody(a.rut, hs) : ''}
+        <div class="entity-row__metric">
+          <div class="entity-row__metric-value">${fmtMoney(a.valLibro)}</div>
+          <div class="entity-row__metric-sub">${pct.toFixed(2)}% sistema</div>
         </div>
+        <div class="entity-row__chip">${a.fundsCount} fondos</div>
+        <div class="entity-row__arrow">›</div>
       </div>
     `;
   }).join('');
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Por administradora</strong> · Click en una tarjeta para ver fondos administrados, compañías clientes y distribución. Filas con tinte azul = Ameris.
+      <strong>Por administradora</strong> · Click en una administradora para abrir el detalle (fondos administrados, compañías clientes, distribución). Filas con tinte azul = Ameris.
     </div>
     <div class="insurer-toolbar">
-      <input type="search" id="agf-search" placeholder="🔍 Buscar AGF por nombre o RUT…" value="${escapeHtml(AGF_SEARCH)}">
-      <span class="insurer-counter">${filtered.length} de ${list.length} AGFs</span>
+      <input type="search" id="agf-search" placeholder="🔍 Buscar administradora por nombre o RUT…" value="${escapeHtml(AGF_SEARCH)}">
+      <span class="insurer-counter">${filtered.length} de ${list.length} administradoras</span>
     </div>
     <div class="insurer-cards" id="agf-cards">
       ${cards || '<div class="empty-state" style="padding:20px">Sin coincidencias para la búsqueda.</div>'}
     </div>
   `;
 
-  // Wire search
   const searchEl = document.getElementById('agf-search');
   let searchDebounce;
   if (searchEl) {
@@ -6141,14 +6451,89 @@ function renderAGF() {
     });
   }
 
-  // Wire card-head clicks → toggle expansion (solo una abierta a la vez)
-  container.querySelectorAll('#agf-cards .insurer-card-head').forEach(head => {
-    head.addEventListener('click', () => {
-      const rut = head.dataset.rut;
-      AGF_OPEN_RUT = (AGF_OPEN_RUT === rut) ? '' : rut;
-      renderAGF();
+  // Wire entity-row clicks → abrir modal flotante
+  container.querySelectorAll('#agf-cards .entity-row').forEach(row => {
+    const openHandler = () => openAGFModal(row.dataset.rut);
+    row.addEventListener('click', openHandler);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHandler(); }
     });
   });
+}
+
+function openAGFModal(rut) {
+  AGF_OPEN_RUT = rut;
+  document.querySelectorAll('#agf-cards .entity-row').forEach(r => {
+    r.classList.toggle('is-active', r.dataset.rut === rut);
+  });
+
+  const hs = latestSnapshotByInsurer(activeHoldings());
+  const list = aggregateByAGF(hs);
+  const agf = list.find(a => a.rut === rut);
+  if (!agf) return;
+  const totalSys = list.reduce((s, a) => s + a.valLibro, 0) || 1;
+  const pct = (agf.valLibro / totalSys) * 100;
+  const isAmeris = isAmerisRut(rut);
+
+  const idx = AGF_MODAL_ORDER.indexOf(rut);
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && idx < AGF_MODAL_ORDER.length - 1;
+
+  const html = `
+    <div class="ameris-modal-header">
+      <button class="ameris-modal-nav-btn" id="agf-modal-prev" ${hasPrev ? '' : 'disabled'} title="Administradora anterior">⟨ Anterior</button>
+      <div style="min-width:0;overflow:hidden">
+        <div class="ameris-modal-eyebrow">Administradora · ${idx + 1} de ${AGF_MODAL_ORDER.length}${isAmeris ? ' · Ameris' : ''}</div>
+        <div class="ameris-modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(agf.agf)}</div>
+        <div style="font-size:var(--fs-meta);opacity:0.85;margin-top:2px">RUT ${fmtRut(rut)} · ${fmtMoney(agf.valLibro)} · ${pct.toFixed(2)}% sistema · ${agf.fundsCount} fondos · ${agf.insurersCount} clientes</div>
+      </div>
+      <button class="ameris-modal-nav-btn" id="agf-modal-next" ${hasNext ? '' : 'disabled'} title="Administradora siguiente">Siguiente ⟩</button>
+      <button class="ameris-modal-close" id="agf-modal-close" title="Cerrar (ESC)">✕</button>
+    </div>
+    <div class="ameris-modal-body" id="agf-modal-body">
+      ${renderAGFCardBody(rut, hs)}
+    </div>
+  `;
+
+  openModal('agf-modal', html, {
+    onMount: (overlay) => _wireAGFModalHandlers(overlay, rut),
+    onClose: () => {
+      AGF_OPEN_RUT = '';
+      document.querySelectorAll('#agf-cards .entity-row.is-active').forEach(r => r.classList.remove('is-active'));
+    },
+  });
+}
+
+function _wireAGFModalHandlers(overlay, rut) {
+  const closeBtn = overlay.querySelector('#agf-modal-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => closeTopModal());
+  const prevBtn = overlay.querySelector('#agf-modal-prev');
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    const i = AGF_MODAL_ORDER.indexOf(AGF_OPEN_RUT);
+    if (i > 0) openAGFModal(AGF_MODAL_ORDER[i - 1]);
+  });
+  const nextBtn = overlay.querySelector('#agf-modal-next');
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    const i = AGF_MODAL_ORDER.indexOf(AGF_OPEN_RUT);
+    if (i >= 0 && i < AGF_MODAL_ORDER.length - 1) openAGFModal(AGF_MODAL_ORDER[i + 1]);
+  });
+}
+
+function _rerenderAGFModalBody(rut) {
+  const bodyEl = document.getElementById('agf-modal-body');
+  if (!bodyEl) return;
+  bodyEl.classList.add('is-loading');
+  const hs = latestSnapshotByInsurer(activeHoldings());
+  bodyEl.innerHTML = renderAGFCardBody(rut, hs);
+  setTimeout(() => bodyEl.classList.remove('is-loading'), 30);
+}
+
+function _refreshAGFAfterStateChange() {
+  if (AGF_OPEN_RUT && document.getElementById('agf-modal-body')) {
+    _rerenderAGFModalBody(AGF_OPEN_RUT);
+  } else {
+    renderAGF();
+  }
 }
 
 // Cuerpo expandido de una tarjeta de AGF (mismo patrón que renderInsurerCardBody).
@@ -6302,10 +6687,10 @@ function renderAGFCardBody(rut, hs) {
 
   const safeId = rut.replace(/[^A-Za-z0-9-]/g, '_');
 
-  // Wire del botón expander + KPIs clickeables tras innerHTML
+  // Wire del botón expander + KPIs clickeables tras innerHTML. El wrapper
+  // del modal (agf-modal-body) tiene precedencia; fallback al wrapper inline.
   setTimeout(() => {
-    // KPIs clickeables del resumen ejecutivo
-    const bodyEl = document.getElementById('agf-body-' + safeId);
+    const bodyEl = document.getElementById('agf-modal-body') || document.getElementById('agf-body-' + safeId);
     if (bodyEl) {
       _wireIcStatClicks(bodyEl, {
         entityType: 'agf',
@@ -6474,6 +6859,19 @@ let INSURER_OPEN_RUT = '';
 // el detalle se mantiene abierto (no obliga a re-clickear).
 let INSURER_DETAIL_OPEN = false;
 let INSURER_SEARCH = '';
+// Cache de filtros por RUT: cuando el usuario reabre la misma cía. recupera su
+// estado anterior. Se limpia al cambiar período/foco global (ver loadState).
+const INSURER_FILTERS_BY_RUT = new Map();
+// Snapshot de la lista ordenada en el último render — habilita botones
+// "compañía anterior / siguiente" dentro del modal sin recalcular la lista.
+let INSURER_MODAL_ORDER = [];
+
+function _insurerFilterState(rut) {
+  if (!INSURER_FILTERS_BY_RUT.has(rut)) {
+    INSURER_FILTERS_BY_RUT.set(rut, { viewMode: 'category', agfFilter: '', detailOpen: false });
+  }
+  return INSURER_FILTERS_BY_RUT.get(rut);
+}
 
 function renderInsurer() {
   const hsAll = activeHoldings();
@@ -6493,42 +6891,33 @@ function renderInsurer() {
   const filtered = q
     ? list.filter(c => c.name.toLowerCase().includes(q) || c.rut.includes(q))
     : list;
+  INSURER_MODAL_ORDER = filtered.map(c => c.rut);
 
-  // Cada tarjeta es una <details> nativa, pero controlamos manualmente el estado
-  // para que solo una esté abierta a la vez (más limpio visualmente).
-  const cards = filtered.map(c => {
+  // Card simplificada: 1 línea por compañía con nombre + Val. Libro + % sistema
+  // + chip con # fondos. Click abre el modal flotante (sin expand inline).
+  const cards = filtered.map((c, i) => {
     const isOpen = c.rut === INSURER_OPEN_RUT;
     const pct = totalSys > 0 ? (c.valLibro / totalSys * 100) : 0;
-    const topCats = Object.entries(c.catBreakdown).sort((a,b)=>b[1]-a[1]).slice(0, 4);
-    const catSummary = topCats.map(([k,v]) =>
-      `<span class="ic-cat-chip">${escapeHtml(k)}: <strong>${fmtMoney(v)}</strong></span>`
-    ).join('');
     return `
-      <div class="insurer-card ${isOpen ? 'open' : ''}" data-rut="${c.rut}">
-        <div class="insurer-card-head" data-rut="${c.rut}">
-          <div class="ic-name">
-            <span class="ic-chevron">▶</span>
-            <div>
-              <strong>${escapeHtml(c.name)}</strong>
-              <div class="ic-sub">RUT ${fmtRut(c.rut)} · ${fmtPeriod(c.periodo)} · ${c.positions} posiciones</div>
-            </div>
-          </div>
-          <div class="ic-stats">
-            <div class="ic-stat-val">${fmtMoney(c.valLibro)}</div>
-            <div class="ic-stat-pct">${pct.toFixed(2)}% sistema</div>
-          </div>
-          <div class="ic-cats">${catSummary}</div>
+      <div class="entity-row${isOpen ? ' is-active' : ''}" data-rut="${escapeHtml(c.rut)}" role="button" tabindex="0">
+        <div class="entity-row__rank">${i + 1}</div>
+        <div class="entity-row__name">
+          <strong>${escapeHtml(c.name)}</strong>
+          <div class="entity-row__sub">RUT ${fmtRut(c.rut)} · ${fmtPeriod(c.periodo)}</div>
         </div>
-        <div class="insurer-card-body" id="insurer-body-${c.rut.replace(/[^A-Za-z0-9-]/g, '_')}">
-          ${isOpen ? renderInsurerCardBody(c.rut) : ''}
+        <div class="entity-row__metric">
+          <div class="entity-row__metric-value">${fmtMoney(c.valLibro)}</div>
+          <div class="entity-row__metric-sub">${pct.toFixed(2)}% sistema</div>
         </div>
+        <div class="entity-row__chip">${c.fundsCount} fondos</div>
+        <div class="entity-row__arrow">›</div>
       </div>
     `;
   }).join('');
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Por compañía aseguradora</strong> · Click en una tarjeta para ver su cartera completa. Dentro puedes alternar <em>por categoría</em> ↔ <em>por administradora</em>, y filtrar por una administradora específica.
+      <strong>Por compañía aseguradora</strong> · Click en una compañía para abrir su detalle completo en una vista flotante. Usá ⟨ Anterior · Siguiente ⟩ dentro del detalle para recorrer la lista sin cerrar.
     </div>
     <div class="insurer-toolbar">
       <input type="search" id="insurer-search" placeholder="🔍 Buscar compañía por nombre o RUT…" value="${escapeHtml(INSURER_SEARCH)}">
@@ -6554,18 +6943,106 @@ function renderInsurer() {
     });
   }
 
-  // Wire card-head clicks → toggle expansion (only one open at a time)
-  document.querySelectorAll('#insurer-cards .insurer-card-head').forEach(head => {
-    head.addEventListener('click', () => {
-      const rut = head.dataset.rut;
-      INSURER_OPEN_RUT = (INSURER_OPEN_RUT === rut) ? '' : rut;
-      // Reset solo cuando se cierra o se cambia de card — no entre cambios
-      // de modo/filtro dentro de la misma card.
-      INSURER_AGF_FILTER = '';
-      INSURER_DETAIL_OPEN = false;
-      renderInsurer();
+  // Wire entity-row clicks → abrir modal flotante (no expand inline)
+  document.querySelectorAll('#insurer-cards .entity-row').forEach(row => {
+    const openHandler = () => {
+      const rut = row.dataset.rut;
+      openInsurerModal(rut);
+    };
+    row.addEventListener('click', openHandler);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openHandler();
+      }
     });
   });
+}
+
+// Abre el modal flotante con el detalle completo de una compañía. Reusa el
+// renderer renderInsurerCardBody para el body — los handlers internos están
+// adaptados (vía _refreshInsurerAfterStateChange) para rerenderear sólo el
+// body del modal cuando se cambia sub-tab/filtro/detail, en lugar de la lista
+// entera de fondo.
+function openInsurerModal(rut) {
+  INSURER_OPEN_RUT = rut;
+  // Marcar fila activa en la lista de fondo (solo visual; no re-renderea)
+  document.querySelectorAll('#insurer-cards .entity-row').forEach(r => {
+    r.classList.toggle('is-active', r.dataset.rut === rut);
+  });
+
+  const list = aggregateByInsurer(latestSnapshotByInsurer(activeHoldings()));
+  const ins = list.find(c => c.rut === rut);
+  if (!ins) return;
+
+  const idx = INSURER_MODAL_ORDER.indexOf(rut);
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && idx < INSURER_MODAL_ORDER.length - 1;
+  const totalSys = list.reduce((s, c) => s + c.valLibro, 0);
+  const pct = totalSys > 0 ? (ins.valLibro / totalSys * 100) : 0;
+
+  const html = `
+    <div class="ameris-modal-header">
+      <button class="ameris-modal-nav-btn" id="ins-modal-prev" ${hasPrev ? '' : 'disabled'} title="Compañía anterior">⟨ Anterior</button>
+      <div style="min-width:0;overflow:hidden">
+        <div class="ameris-modal-eyebrow">Compañía aseguradora · ${idx + 1} de ${INSURER_MODAL_ORDER.length}</div>
+        <div class="ameris-modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ins.name)}</div>
+        <div style="font-size:var(--fs-meta);opacity:0.85;margin-top:2px">RUT ${fmtRut(ins.rut)} · ${fmtPeriod(ins.periodo)} · ${fmtMoney(ins.valLibro)} · ${pct.toFixed(2)}% sistema</div>
+      </div>
+      <button class="ameris-modal-nav-btn" id="ins-modal-next" ${hasNext ? '' : 'disabled'} title="Compañía siguiente">Siguiente ⟩</button>
+      <button class="ameris-modal-close" id="ins-modal-close" title="Cerrar (ESC)">✕</button>
+    </div>
+    <div class="ameris-modal-body" id="insurer-modal-body">
+      ${renderInsurerCardBody(rut)}
+    </div>
+  `;
+
+  openModal('insurer-modal', html, {
+    onMount: (overlay) => _wireInsurerModalHandlers(overlay, rut),
+    onClose: () => {
+      INSURER_OPEN_RUT = '';
+      document.querySelectorAll('.entity-row.is-active').forEach(r => r.classList.remove('is-active'));
+    },
+  });
+}
+
+function _wireInsurerModalHandlers(overlay, rut) {
+  const closeBtn = overlay.querySelector('#ins-modal-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => closeTopModal());
+  const prevBtn = overlay.querySelector('#ins-modal-prev');
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    const i = INSURER_MODAL_ORDER.indexOf(INSURER_OPEN_RUT);
+    if (i > 0) openInsurerModal(INSURER_MODAL_ORDER[i - 1]);
+  });
+  const nextBtn = overlay.querySelector('#ins-modal-next');
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    const i = INSURER_MODAL_ORDER.indexOf(INSURER_OPEN_RUT);
+    if (i >= 0 && i < INSURER_MODAL_ORDER.length - 1) openInsurerModal(INSURER_MODAL_ORDER[i + 1]);
+  });
+}
+
+// Re-renderea SOLO el body del modal Insurer cuando cambia state interno
+// (sub-tab, filtro AGF, toggle de detalle). NO re-renderea la lista de fondo.
+function _rerenderInsurerModalBody(rut) {
+  const bodyEl = document.getElementById('insurer-modal-body');
+  if (!bodyEl) return;
+  bodyEl.classList.add('is-loading');
+  bodyEl.innerHTML = renderInsurerCardBody(rut);
+  // El setTimeout interno de renderInsurerCardBody hace su propio wiring de
+  // _wireIcStatClicks y handlers de filtro/sub-tab. Solo necesitamos quitar el
+  // flag de loading.
+  setTimeout(() => bodyEl.classList.remove('is-loading'), 30);
+}
+
+// Wrapper que elige entre rerender del modal o de la lista según si hay modal
+// abierto. Reemplaza a las llamadas directas renderInsurer() dentro de
+// handlers internos del card-body (que antes re-rendereaban todo).
+function _refreshInsurerAfterStateChange() {
+  if (INSURER_OPEN_RUT && document.getElementById('insurer-modal-body')) {
+    _rerenderInsurerModalBody(INSURER_OPEN_RUT);
+  } else {
+    renderInsurer();
+  }
 }
 
 // Genera el HTML del cuerpo expandido de una tarjeta de aseguradora.
@@ -6743,14 +7220,15 @@ function renderInsurerCardBody(rut) {
       </div>` : '');
   }
 
-  // Wire controles del nivel 2 (toggle, filtro, expand button) tras innerHTML
+  // Wire controles del nivel 2 (toggle, filtro, expand button) tras innerHTML.
+  // Búsqueda dentro de #insurer-modal-body (modal) o del wrapper inline si
+  // existe (legacy). Re-renderea sólo el body del modal vía
+  // _refreshInsurerAfterStateChange — no la lista de fondo entera.
   setTimeout(() => {
-    // KPIs clickeables del resumen ejecutivo
-    const bodyEl = document.getElementById('insurer-body-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
-    if (bodyEl) {
-      // Buscar el nombre de la compañía desde el holdings
+    const scope = document.getElementById('insurer-modal-body') || document.getElementById('insurer-body-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
+    if (scope) {
       const ins = aggregateByInsurer(activeHoldings()).find(c => c.rut === rut);
-      _wireIcStatClicks(bodyEl, {
+      _wireIcStatClicks(scope, {
         entityType: 'insurer',
         entityName: (ins ? ins.name : '') || 'esta compañía',
         periodo: lastP,
@@ -6760,31 +7238,28 @@ function renderInsurerCardBody(rut) {
         posiciones: positionsCount,
       });
     }
-    document.querySelectorAll('.ic-vt-btn[data-mode]').forEach(btn => {
+    (scope || document).querySelectorAll('.ic-vt-btn[data-mode]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (btn.classList.contains('active')) return;
         INSURER_VIEW_MODE = btn.dataset.mode;
-        // NO resetear el filtro ni cerrar el detalle: el usuario puede
-        // alternar entre 'Por categoría' y 'Por AGF' manteniendo el contexto.
-        renderInsurer();
+        _refreshInsurerAfterStateChange();
       });
     });
-    const f = document.getElementById('ic-agf-filter-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
+    const f = (scope || document).querySelector('#ic-agf-filter-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
     if (f) {
       f.addEventListener('click', (e) => e.stopPropagation());
       f.addEventListener('change', (e) => {
         INSURER_AGF_FILTER = e.target.value;
-        renderInsurer();
+        _refreshInsurerAfterStateChange();
       });
     }
-    // Botón "Limpiar filtro" (solo aparece cuando hay filtro activo)
-    const clearBtn = document.getElementById('ic-agf-clear-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
+    const clearBtn = (scope || document).querySelector('#ic-agf-clear-' + rut.replace(/[^A-Za-z0-9-]/g, '_'));
     if (clearBtn) {
       clearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         INSURER_AGF_FILTER = '';
-        renderInsurer();
+        _refreshInsurerAfterStateChange();
       });
     }
     // Toggle del detalle completo (nivel 2)
@@ -12329,6 +12804,8 @@ function setupTabs() {
   // El trigger del dropdown se maneja aparte.
   document.querySelectorAll('.tab[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
+      // Cerrar cualquier modal flotante abierto antes de cambiar de pestaña
+      if (typeof closeAllModals === 'function') closeAllModals();
       document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       const isDropdownItem = btn.classList.contains('tab-group-item');
