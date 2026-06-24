@@ -1762,7 +1762,7 @@
       <ul style="margin:6px 0 0">
         <li><strong>B.2</strong> — Acciones y cuotas de fondos de inversión <em>nacionales</em> (Circular N° 1.835). Filename: <code>aAAAAMMv.RUT</code>.</li>
         <li><strong>B.5</strong> — Inversiones en el <em>extranjero</em>: bonos soberanos/corporativos, fondos extranjeros y acciones extranjeras (Circular N° 152). Filename: <code>xAAAAMMv.RUT</code>.</li>
-        <li><strong>B.8</strong> — Composición de cartera consolidada (Circular N° 1.835). Es la tabla maestra que agrupa toda la cartera de la cía. por familia de instrumento. Filename: <code>cAAAAMMv.RUT</code>. Pestaña: Top Down · Sistema.</li>
+        <li><strong>B.8</strong> — Composición de cartera consolidada (Circular N° 1.835). Es la tabla maestra que agrupa toda la cartera de la cía. por familia de instrumento. Filename: <code>cAAAAMMv.RUT</code>. Pestaña: Industria de seguros.</li>
       </ul>
       <p style="margin-top:10px"><strong>¿Qué puedes hacer aquí?</strong></p>
       <ul>
@@ -1900,7 +1900,7 @@
           </svg>
         </div>
         <h4>3 · Navegá las pestañas</h4>
-        <p><strong>Resumen Fondos de Inversión</strong> para vista macro · <strong>Por AGF / Compañía</strong> para drill-down · <strong>Pulso Ameris</strong> para vista específica de tu AGF · <strong>Evolución</strong> para tendencias temporales.</p>
+        <p><strong>Industria de seguros</strong> para vista macro · <strong>Análisis de fondos</strong> para drill-down (por administradora o compañía) · <strong>Pulso Ameris</strong> para vista específica de tu AGF · <strong>Evolución mensual</strong> para tendencias temporales.</p>
       </div>
     </div>
   </div>
@@ -1986,38 +1986,38 @@
        dropdown 'Fondos de inversión' para reducir el ruido visual en la
        barra. Pulso Ameris queda aparte por ser específica de Ameris. -->
   <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="topdown" role="tab" title="Análisis Top Down: del sistema asegurador completo (cartera consolidada B.8) hasta el detalle de cada compañía">Top Down · Sistema</button>
+    <button class="tab active" data-tab="topdown" role="tab" title="Vista de la industria aseguradora chilena: cartera consolidada del sistema, ranking de cías. y composición por clase de activo">Industria de seguros</button>
 
     <div class="tab-group" id="tab-group-fondos" style="position:relative;display:inline-block">
-      <button class="tab tab-group-trigger" id="tab-group-fondos-btn" type="button" role="tab" aria-haspopup="true" aria-expanded="false" title="Vistas focalizadas en fondos de inversión nacionales (B.2) y extranjeros (B.5)">
-        <span id="tab-group-fondos-label">Fondos de inversión</span>
+      <button class="tab tab-group-trigger" id="tab-group-fondos-btn" type="button" role="tab" aria-haspopup="true" aria-expanded="false" title="Análisis detallado de fondos de inversión nacionales (B.2) y extranjeros (B.5) por distintas dimensiones">
+        <span id="tab-group-fondos-label">Análisis de fondos</span>
         <span style="margin-left:4px;font-size:10px">▾</span>
       </button>
-      <div class="tab-group-menu" id="tab-group-fondos-menu" style="display:none;position:absolute;top:100%;left:0;background:white;border:1px solid var(--c-border);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.12);min-width:240px;z-index:100;padding:6px;margin-top:4px">
-        <button class="tab tab-group-item" data-tab="general" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Vista panorámica del sistema: KPIs, distribución por categoría, top AGFs y top compañías">
-          <strong>Resumen Fondos de Inversión</strong>
+      <div class="tab-group-menu" id="tab-group-fondos-menu" style="display:none;position:absolute;top:100%;left:0;background:white;border:1px solid var(--c-border);border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.12);min-width:260px;z-index:100;padding:6px;margin-top:4px">
+        <button class="tab tab-group-item" data-tab="general" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Vista panorámica del sistema: KPIs, distribución por categoría, top administradoras y top compañías">
+          <strong>Visión general</strong>
           <div style="font-size:11px;color:var(--c-muted);margin-top:2px">KPIs, distribución y top movers del sistema</div>
         </button>
         <button class="tab tab-group-item" data-tab="insurer" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Detalle de la cartera de cada compañía de seguros, agrupado por categoría">
-          <strong>Por Compañía de Seguros</strong>
+          <strong>Por compañía aseguradora</strong>
           <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Cartera CFI por aseguradora con drill-down</div>
         </button>
-        <button class="tab tab-group-item" data-tab="agf" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Análisis agrupado por AGF/Emisor con drill-down al detalle por fondo y compañía cliente">
-          <strong>Por AGF / Emisor</strong>
-          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Ranking de AGFs, fondos y compañías cliente</div>
+        <button class="tab tab-group-item" data-tab="agf" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Análisis agrupado por administradora / emisor del fondo con drill-down al detalle por fondo y compañía cliente">
+          <strong>Por administradora</strong>
+          <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Ranking de administradoras, fondos y clientes</div>
         </button>
         <button class="tab tab-group-item" data-tab="evolucion" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Evolución mes a mes con sparklines, gráfico de tendencia y top movers">
-          <strong>Evolución</strong>
+          <strong>Evolución mensual</strong>
           <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Tendencia mes a mes con top movers</div>
         </button>
-        <button class="tab tab-group-item" data-tab="extranjero" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Inversión en el extranjero (archivos B.5): bonos, fondos y acciones extranjeras">
-          <strong>Extranjero (B.5)</strong>
+        <button class="tab tab-group-item" data-tab="extranjero" role="tab" style="display:block;width:100%;text-align:left;border:none;background:transparent;padding:8px 12px;border-radius:4px;font-size:13px;color:var(--c-ameris-navy);cursor:pointer" title="Inversión en el extranjero (archivos B.5): bonos, fondos y acciones internacionales">
+          <strong>Inversiones en el extranjero</strong>
           <div style="font-size:11px;color:var(--c-muted);margin-top:2px">Bonos, fondos y acciones internacionales</div>
         </button>
       </div>
     </div>
 
-    <button class="tab tab-ameris" data-tab="pulso" role="tab" title="Análisis específico para Ameris AGF: AUM, ranking, market share, concentración, tendencias">Pulso Ameris</button>
+    <button class="tab tab-ameris" data-tab="pulso" role="tab" title="Análisis específico de Ameris AGF: AUM, ranking, market share, concentración, tendencias">Pulso Ameris</button>
   </nav>
 
   <div class="tab-panels">
@@ -6082,7 +6082,7 @@ function renderAGF() {
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Por AGF / Emisor</strong> · Click en una tarjeta para ver fondos administrados, compañías clientes y distribución. Filas con tinte azul = Ameris.
+      <strong>Por administradora</strong> · Click en una tarjeta para ver fondos administrados, compañías clientes y distribución. Filas con tinte azul = Ameris.
     </div>
     <div class="insurer-toolbar">
       <input type="search" id="agf-search" placeholder="🔍 Buscar AGF por nombre o RUT…" value="${escapeHtml(AGF_SEARCH)}">
@@ -6495,7 +6495,7 @@ function renderInsurer() {
 
   container.innerHTML = `
     <div class="notice">
-      <strong>Por Compañía de Seguros</strong> · Click en una tarjeta para ver su cartera completa. Dentro puedes alternar <em>por categoría</em> ↔ <em>por AGF</em>, y filtrar por administradora.
+      <strong>Por compañía aseguradora</strong> · Click en una tarjeta para ver su cartera completa. Dentro puedes alternar <em>por categoría</em> ↔ <em>por administradora</em>, y filtrar por una administradora específica.
     </div>
     <div class="insurer-toolbar">
       <input type="search" id="insurer-search" placeholder="🔍 Buscar compañía por nombre o RUT…" value="${escapeHtml(INSURER_SEARCH)}">
@@ -10594,7 +10594,7 @@ function renderTopDown() {
   if (STATE.files.length === 0) {
     container.innerHTML = `
       <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
-        <strong style="color:var(--c-ameris-navy)">Top Down · Sistema asegurador chileno</strong> ·
+        <strong style="color:var(--c-ameris-navy)">Industria de seguros chilenos</strong> ·
         Análisis de la cartera consolidada de todas las CSV chilenas.
       </div>
       ${topdownDz}
@@ -10614,7 +10614,7 @@ function renderTopDown() {
   if (b8Files.length === 0) {
     container.innerHTML = `
       <div class="notice" style="background:linear-gradient(90deg,#EAF2FD 0%,#E0FAFC 100%);border-color:var(--c-ameris-cyan)">
-        <strong style="color:var(--c-ameris-navy)">Top Down · Sistema asegurador chileno</strong>
+        <strong style="color:var(--c-ameris-navy)">Industria de seguros chilenos</strong>
       </div>
       ${topdownDz}
       <div class="card" style="margin-top:14px;background:#fff7ed;border-left:4px solid #f59e0b">
@@ -12272,11 +12272,11 @@ function setupTabs() {
   // Labels y descripciones cortas para sincronizar el trigger del dropdown
   // 'Fondos de inversión' con la sub-pestaña actualmente activa.
   const fondosLabels = {
-    general:    'Fondos · Resumen',
-    insurer:    'Fondos · Por Compañía',
-    agf:        'Fondos · Por AGF',
-    evolucion:  'Fondos · Evolución',
-    extranjero: 'Fondos · Extranjero',
+    general:    'Fondos · Visión general',
+    insurer:    'Fondos · Por compañía aseguradora',
+    agf:        'Fondos · Por administradora',
+    evolucion:  'Fondos · Evolución mensual',
+    extranjero: 'Fondos · Inversiones en el extranjero',
   };
   const fondosGroupTabs = new Set(Object.keys(fondosLabels));
   function updateFondosTrigger(activeTabId) {
@@ -12287,7 +12287,7 @@ function setupTabs() {
       triggerLabel.textContent = fondosLabels[activeTabId];
       triggerBtn.classList.add('active');
     } else {
-      triggerLabel.textContent = 'Fondos de inversión';
+      triggerLabel.textContent = 'Análisis de fondos';
       triggerBtn.classList.remove('active');
     }
   }
