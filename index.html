@@ -8049,26 +8049,9 @@ function renderExtranjero() {
   `;
   }).join('');
 
-  // Per-insurer aggregation (last reported B.5 file per insurer)
-  const insurerMap = new Map();
-  for (const r of records) {
-    const k = r._insurerRut;
-    const cur = insurerMap.get(k) || {
-      rut: r._insurerRut, name: r._insurerName,
-      valDeuda: 0, valCuotas: 0, total: 0,
-      countDeuda: 0, countCuotas: 0,
-      periods: new Set(),
-    };
-    if (r._subtype === 'deuda') { cur.valDeuda += r.valorFinal || 0; cur.countDeuda += 1; }
-    else { cur.valCuotas += r.valorFinal || 0; cur.countCuotas += 1; }
-    cur.total = cur.valDeuda + cur.valCuotas;
-    cur.periods.add(r._periodo);
-    insurerMap.set(k, cur);
-  }
-  const insurerList = Array.from(insurerMap.values()).sort((a, b) => b.total - a.total);
-  const insOptions = insurerList.map(e =>
-    `<option value="${e.rut}">${escapeHtml(e.name)} (${fmtRut(e.rut)}) — ${fmtMoney(e.total)}</option>`
-  ).join('');
+  // La agregación por cía. la hace renderExtranjeroList — aquí ya no la
+  // pre-calculamos porque el dropdown picker fue reemplazado por una lista
+  // clickeable que abre modal.
 
   container.innerHTML = `
     <div class="notice" style="background:#f5f3ff;border-color:#c4b5fd">
@@ -8109,23 +8092,14 @@ function renderExtranjero() {
 
     <!-- Drill-down por compañía de seguros (B.5) -->
     <div class="card">
-      <div class="card-header">
-        <div class="card-title">Detalle por compañía de seguros</div>
-        <div>
-          <select id="b5-insurer-picker" style="min-width:420px">
-            <option value="">— Todas las compañías (resumen) —</option>
-            ${insOptions}
-          </select>
-        </div>
-      </div>
-      <div id="b5-insurer-detail"></div>
+      <div class="card-header"><div class="card-title">Detalle por compañía de seguros</div></div>
+      <div id="b5-insurer-list" style="padding:14px 18px"></div>
     </div>
   `;
 
-  document.getElementById('b5-insurer-picker').addEventListener('change', (e) => {
-    renderExtranjeroDetail(e.target.value);
-  });
-  renderExtranjeroDetail('');
+  // Renderea la lista de cías. con .entity-row. Click → abre modal con el
+  // detalle B.5 completo de la cía. (espejo del patrón usado en Por compañía).
+  renderExtranjeroList();
 
   // Wire de KPIs clickeables del overview Extranjero
   const extOvExplanations = {
@@ -8165,88 +8139,156 @@ function renderExtranjero() {
   }, 0);
 }
 
-// Per-insurer detail for B.5: shows everything that company has invested abroad,
-// grouped by Deuda (bonos) and Cuotas/Acciones, with sub-breakdowns by country
-// and currency to give context.
-function renderExtranjeroDetail(rut) {
-  const detail = document.getElementById('b5-insurer-detail');
+// Estado: orden actual de la lista de cías. (para Anterior/Siguiente en modal).
+let EXT_MODAL_ORDER = [];
+let EXT_OPEN_RUT = '';
+
+// Lista compacta de aseguradoras con .entity-row. Click abre modal con detalle.
+function renderExtranjeroList() {
+  const detail = document.getElementById('b5-insurer-list');
   if (!detail) return;
-  // Foto consolidada por aseguradora (saldos al cierre, no acumulado).
   const records = latestSnapshotByInsurer(activeRecordsB5());
 
-  if (!rut) {
-    // Resumen comparativo: tabla con todas las compañías + sus totales B.5
-    const insurerMap = new Map();
-    for (const r of records) {
-      const k = r._insurerRut;
-      const cur = insurerMap.get(k) || {
-        rut: r._insurerRut, name: r._insurerName,
-        valDeuda: 0, valCuotas: 0, countDeuda: 0, countCuotas: 0,
-        paises: new Set(), monedas: new Set(),
-        periods: new Set(),
-      };
-      if (r._subtype === 'deuda') { cur.valDeuda += r.valorFinal || 0; cur.countDeuda += 1; }
-      else { cur.valCuotas += r.valorFinal || 0; cur.countCuotas += 1; }
-      if (r.pais) cur.paises.add(r.pais);
-      if (r.moneda) cur.monedas.add(r.moneda);
-      cur.periods.add(r._periodo);
-      insurerMap.set(k, cur);
-    }
-    const list = Array.from(insurerMap.values()).map(e => ({
-      ...e, total: e.valDeuda + e.valCuotas
-    })).sort((a, b) => b.total - a.total);
-    const totalAll = list.reduce((s, e) => s + e.total, 0);
-    const rows = list.map((e, i) => `
-      <tr style="cursor:pointer" data-rut="${e.rut}" class="b5-insurer-row" title="Click para ver el detalle de ${escapeHtml(e.name)}">
-        <td>${i + 1}</td>
-        <td>
-          <strong>${escapeHtml(e.name)}</strong>
-          <div style="color:var(--c-muted);font-size:var(--fs-meta)">RUT ${fmtRut(e.rut)} · ${e.periods.size} período${e.periods.size !== 1 ? 's' : ''}</div>
-        </td>
-        <td class="num">${fmtMoney(e.valDeuda)}<div style="color:var(--c-muted);font-size:var(--fs-meta)">${e.countDeuda} bonos</div></td>
-        <td class="num">${fmtMoney(e.valCuotas)}<div style="color:var(--c-muted);font-size:var(--fs-meta)">${e.countCuotas} cuotas/acc</div></td>
-        <td class="num"><strong>${fmtMoney(e.total)}</strong><div style="color:var(--c-muted);font-size:var(--fs-meta)">${totalAll > 0 ? (e.total / totalAll * 100).toFixed(1) : '0'}%</div></td>
-        <td style="font-size:var(--fs-meta);color:var(--c-muted)">
-          ${e.paises.size} países · ${Array.from(e.monedas).slice(0, 4).join(', ')}${e.monedas.size > 4 ? ` +${e.monedas.size - 4}` : ''}
-        </td>
-      </tr>
-    `).join('');
-    detail.innerHTML = `
-      <div style="font-size:var(--fs-meta);color:var(--c-muted);margin:8px 0 4px">
-        Selecciona una compañía arriba —o haz click en una fila— para ver su cartera extranjera completa.
-      </div>
-      <div class="table-wrap" style="margin-top:8px">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th><th>Compañía</th>
-              <th class="num">Deuda extranjera</th>
-              <th class="num">Cuotas/Acciones ext.</th>
-              <th class="num">Total B.5</th>
-              <th>Mezcla</th>
-            </tr>
-          </thead>
-          <tbody>${rows || '<tr><td colspan="6" class="empty-state">Sin datos</td></tr>'}</tbody>
-        </table>
-      </div>
-    `;
-    // Wire row clicks → set picker + render detail
-    detail.querySelectorAll('.b5-insurer-row').forEach(tr => {
-      tr.addEventListener('click', () => {
-        const r = tr.dataset.rut;
-        const sel = document.getElementById('b5-insurer-picker');
-        if (sel) sel.value = r;
-        renderExtranjeroDetail(r);
-      });
-    });
+  const insurerMap = new Map();
+  for (const r of records) {
+    const k = r._insurerRut;
+    const cur = insurerMap.get(k) || {
+      rut: r._insurerRut, name: r._insurerName,
+      valDeuda: 0, valCuotas: 0, countDeuda: 0, countCuotas: 0,
+      paises: new Set(), monedas: new Set(),
+    };
+    if (r._subtype === 'deuda') { cur.valDeuda += r.valorFinal || 0; cur.countDeuda += 1; }
+    else { cur.valCuotas += r.valorFinal || 0; cur.countCuotas += 1; }
+    if (r.pais) cur.paises.add(r.pais);
+    if (r.moneda) cur.monedas.add(r.moneda);
+    insurerMap.set(k, cur);
+  }
+  const list = Array.from(insurerMap.values()).map(e => ({
+    ...e, total: e.valDeuda + e.valCuotas
+  })).sort((a, b) => b.total - a.total);
+  const totalAll = list.reduce((s, e) => s + e.total, 0);
+  EXT_MODAL_ORDER = list.map(e => e.rut);
+
+  if (list.length === 0) {
+    detail.innerHTML = `<div class="empty-state" style="padding:20px">Sin posiciones B.5 cargadas.</div>`;
     return;
   }
 
-  // Detalle de una compañía específica — usa el último período cargado para ella
+  const rows = list.map((e, i) => {
+    const pct = totalAll > 0 ? (e.total / totalAll * 100) : 0;
+    return `
+      <div class="entity-row" data-rut="${escapeHtml(e.rut)}" role="button" tabindex="0">
+        <div class="entity-row__rank">${i + 1}</div>
+        <div class="entity-row__name">
+          <strong>${escapeHtml(e.name)}</strong>
+          <div class="entity-row__sub">RUT ${fmtRut(e.rut)} · ${e.countDeuda + e.countCuotas} posiciones · ${e.paises.size} países</div>
+        </div>
+        <div class="entity-row__metric">
+          <div class="entity-row__metric-value">${fmtMoney(e.total)}</div>
+          <div class="entity-row__metric-sub">${pct.toFixed(1)}% del extranjero</div>
+        </div>
+        <div class="entity-row__chip">${e.countDeuda} bonos · ${e.countCuotas} cuotas</div>
+        <div class="entity-row__arrow">›</div>
+      </div>
+    `;
+  }).join('');
+
+  detail.innerHTML = `
+    <div style="font-size:var(--fs-meta);color:var(--c-muted);margin-bottom:10px">
+      Click en una compañía para ver su cartera extranjera completa (bonos, cuotas, países, monedas).
+    </div>
+    ${rows}
+  `;
+
+  detail.querySelectorAll('.entity-row').forEach(row => {
+    const openHandler = () => openExtranjeroModal(row.dataset.rut);
+    row.addEventListener('click', openHandler);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHandler(); }
+    });
+  });
+}
+
+function openExtranjeroModal(rut) {
+  EXT_OPEN_RUT = rut;
+  document.querySelectorAll('#b5-insurer-list .entity-row').forEach(r => {
+    r.classList.toggle('is-active', r.dataset.rut === rut);
+  });
+
+  const records = latestSnapshotByInsurer(activeRecordsB5());
+  const recs = records.filter(r => r._insurerRut === rut);
+  if (recs.length === 0) return;
+  const insName = recs[0]._insurerName;
+  const periodsHere = Array.from(new Set(recs.map(r => r._periodo))).sort();
+  const lastP = periodsHere[periodsHere.length - 1];
+  const lastRecs = recs.filter(r => r._periodo === lastP);
+  const totAll = lastRecs.reduce((s, r) => s + (r.valorFinal || 0), 0);
+
+  const idx = EXT_MODAL_ORDER.indexOf(rut);
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && idx < EXT_MODAL_ORDER.length - 1;
+
+  const html = `
+    <div class="ameris-modal-header">
+      <button class="ameris-modal-nav-btn" id="ext-modal-prev" ${hasPrev ? '' : 'disabled'} title="Compañía anterior">⟨ Anterior</button>
+      <div style="min-width:0;overflow:hidden">
+        <div class="ameris-modal-eyebrow">Inversiones extranjeras · ${idx + 1} de ${EXT_MODAL_ORDER.length}</div>
+        <div class="ameris-modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(insName)}</div>
+        <div style="font-size:var(--fs-meta);opacity:0.85;margin-top:2px">RUT ${fmtRut(rut)} · ${fmtPeriod(lastP)} · ${fmtMoney(totAll)} · ${lastRecs.length} posiciones</div>
+      </div>
+      <button class="ameris-modal-nav-btn" id="ext-modal-next" ${hasNext ? '' : 'disabled'} title="Compañía siguiente">Siguiente ⟩</button>
+      <button class="ameris-modal-close" id="ext-modal-close" title="Cerrar (ESC)">✕</button>
+    </div>
+    <div class="ameris-modal-body" id="extranjero-modal-body">
+      ${renderExtranjeroDetailHTML(rut, records)}
+    </div>
+  `;
+
+  openModal('extranjero-modal', html, {
+    onMount: (overlay) => {
+      const closeBtn = overlay.querySelector('#ext-modal-close');
+      if (closeBtn) closeBtn.addEventListener('click', () => closeTopModal());
+      const prevBtn = overlay.querySelector('#ext-modal-prev');
+      if (prevBtn) prevBtn.addEventListener('click', () => {
+        const i = EXT_MODAL_ORDER.indexOf(EXT_OPEN_RUT);
+        if (i > 0) openExtranjeroModal(EXT_MODAL_ORDER[i - 1]);
+      });
+      const nextBtn = overlay.querySelector('#ext-modal-next');
+      if (nextBtn) nextBtn.addEventListener('click', () => {
+        const i = EXT_MODAL_ORDER.indexOf(EXT_OPEN_RUT);
+        if (i >= 0 && i < EXT_MODAL_ORDER.length - 1) openExtranjeroModal(EXT_MODAL_ORDER[i + 1]);
+      });
+      // Wire KPIs clickeables del modal
+      const bodyEl = overlay.querySelector('#extranjero-modal-body');
+      if (bodyEl) {
+        bodyEl.querySelectorAll('.kpi-clickable[data-kpi-ext]').forEach(el => {
+          el.addEventListener('click', () => {
+            const key = el.dataset.kpiExt;
+            const exps = {
+              deuda: { titulo: 'Deuda extranjera (cía)', contenido: '<p>Bonos soberanos, corporativos y supranacionales que esta compañía mantiene fuera de Chile, valorizados en pesos chilenos al cierre.</p>' },
+              cuotas: { titulo: 'Cuotas / Acciones extranjeras (cía)', contenido: '<p>Cuotas de fondos extranjeros, ETFs y acciones que esta compañía mantiene fuera de Chile, valorizados en pesos chilenos al cierre.</p>' },
+              paises: { titulo: 'Países representados', contenido: '<p>Cuántos países distintos aparecen en la cartera extranjera de la compañía (campo País del archivo B.5).</p>' },
+              monedas: { titulo: 'Monedas distintas', contenido: '<p>Cuántas monedas distintas aparecen como moneda de emisión de los instrumentos extranjeros.</p>' },
+            };
+            const exp = exps[key];
+            if (exp) _showKpiExplanation(exp);
+          });
+        });
+      }
+    },
+    onClose: () => {
+      EXT_OPEN_RUT = '';
+      document.querySelectorAll('#b5-insurer-list .entity-row.is-active').forEach(r => r.classList.remove('is-active'));
+    },
+  });
+}
+
+// Genera el HTML del detalle B.5 de una compañía (sin el wrapper #b5-insurer-detail).
+// Reusado por openExtranjeroModal.
+function renderExtranjeroDetailHTML(rut, records) {
   const recs = records.filter(r => r._insurerRut === rut);
   if (recs.length === 0) {
-    detail.innerHTML = `<div class="empty-state" style="padding:20px">Sin posiciones B.5 para esta compañía en el período seleccionado.</div>`;
-    return;
+    return `<div class="empty-state" style="padding:20px">Sin posiciones B.5 para esta compañía en el período seleccionado.</div>`;
   }
   const insName = recs[0]._insurerName;
   const periodsHere = Array.from(new Set(recs.map(r => r._periodo))).sort();
@@ -8335,23 +8377,9 @@ function renderExtranjeroDetail(rut) {
     ? `${fmtPeriod(lastP)} <span style="color:var(--c-muted);font-size:var(--fs-meta)">(último de ${periodsHere.length} períodos)</span>`
     : fmtPeriod(lastP);
 
-  detail.innerHTML = `
+  return `
     <div class="drill-detail">
-      <div class="drill-header">
-        <div>
-          <h3 style="margin:0 0 4px 0; font-size:16px; color:#5b21b6; font-weight:700">${escapeHtml(insName)}</h3>
-          <div style="color:var(--c-muted); font-size:var(--fs-meta)">
-            RUT ${fmtRut(rut)} · ${periodLabel} ·
-            Total extranjero: <strong style="color:#5b21b6">${fmtMoney(totAll)}</strong>
-            (${lastRecs.length} posiciones)
-          </div>
-        </div>
-        <div style="font-size:var(--fs-meta); color:var(--c-muted); text-align:right">
-          Cifras al cierre del último período cargado para esta compañía.
-        </div>
-      </div>
-
-      <div class="kpi-grid" style="margin-top:10px">
+      <div class="kpi-grid" style="margin-top:0">
         <div class="kpi kpi-clickable" data-kpi-ext="deuda"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Deuda extranjera</div><div class="value">${fmtMoney(totDeuda)}</div><div class="sublabel">${deuda.length} bonos · ${totAll>0?(totDeuda/totAll*100).toFixed(1):'0'}%</div></div>
         <div class="kpi kpi-clickable" data-kpi-ext="cuotas"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Cuotas / acciones</div><div class="value">${fmtMoney(totCuotas)}</div><div class="sublabel">${cuotas.length} cuotas · ${totAll>0?(totCuotas/totAll*100).toFixed(1):'0'}%</div></div>
         <div class="kpi kpi-clickable" data-kpi-ext="paises"><div class="kpi-info-icon" title="Click para ver explicación">?</div><div class="label">Países</div><div class="value">${byPais.length}</div><div class="sublabel">${byPais.slice(0,3).map(p=>paisName(p.key)).join(', ')}${byPais.length>3?'…':''}</div></div>
@@ -8412,44 +8440,6 @@ function renderExtranjeroDetail(rut) {
       </details>
     </div>
   `;
-
-  // Wire de los KPIs clickeables del bloque Extranjero (B.5)
-  const extExplanations = {
-    deuda: {
-      titulo: 'Deuda extranjera',
-      contenido: `<p><strong>Qué es:</strong> suma del valor contable en pesos chilenos de todos los <em>instrumentos de deuda</em> (bonos soberanos, corporativos, etc.) que la aseguradora mantiene en el extranjero al cierre del período.</p>
-      <p><strong>De dónde sale:</strong> archivo B.5 de la CMF — columna <code>Valor Final</code> de las filas clasificadas como deuda (tipo de instrumento en familia <em>Bonos / Pagarés / Letras</em>).</p>
-      <p><strong>Cómo leerlo:</strong> el porcentaje al lado muestra qué fracción del total extranjero corresponde a deuda. Una aseguradora muy cargada a deuda suele tener perfil conservador o calce de pasivos largos (rentas vitalicias).</p>
-      <p><strong>Cuidado:</strong> el monto está en CLP al tipo de cambio de cierre. Variaciones mes a mes pueden deberse a TC, no a movimiento real de cartera.</p>`
-    },
-    cuotas: {
-      titulo: 'Cuotas / acciones',
-      contenido: `<p><strong>Qué es:</strong> suma del valor contable en pesos chilenos de cuotas de fondos extranjeros y acciones que la aseguradora mantiene en el extranjero.</p>
-      <p><strong>De dónde sale:</strong> archivo B.5 — filas con tipo de instrumento de la familia <em>Cuotas de Fondos / Acciones / ETFs</em>.</p>
-      <p><strong>Cómo leerlo:</strong> el porcentaje muestra el peso relativo vs. deuda. Una cuota alta sugiere apetito por equity / renta variable internacional.</p>`
-    },
-    paises: {
-      titulo: 'Países representados',
-      contenido: `<p><strong>Qué es:</strong> cantidad de países distintos donde la aseguradora tiene exposición extranjera al cierre del período.</p>
-      <p><strong>De dónde sale:</strong> columna <code>País</code> del archivo B.5, contando valores únicos.</p>
-      <p><strong>Cómo leerlo:</strong> mayor número de países = portafolio más diversificado geográficamente. Concentración en pocos países es señal de exposición regional / soberana específica.</p>`
-    },
-    monedas: {
-      titulo: 'Monedas representadas',
-      contenido: `<p><strong>Qué es:</strong> cantidad de monedas distintas en las que están emitidos los instrumentos de la cartera extranjera.</p>
-      <p><strong>De dónde sale:</strong> columna <code>Moneda</code> del archivo B.5, contando valores únicos.</p>
-      <p><strong>Cómo leerlo:</strong> diversidad de monedas implica exposición a riesgo cambiario. USD suele dominar; presencia de EUR/GBP/JPY indica diversificación deliberada.</p>`
-    }
-  };
-  setTimeout(() => {
-    detail.querySelectorAll('.kpi-clickable[data-kpi-ext]').forEach(el => {
-      el.addEventListener('click', () => {
-        const key = el.dataset.kpiExt;
-        const exp = extExplanations[key];
-        if (exp) _showKpiExplanation(exp);
-      });
-    });
-  }, 0);
 }
 
 
