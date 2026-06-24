@@ -11867,11 +11867,23 @@ function renderPulsoAmeris() {
   const totalInsurersInSys = new Set(lastCFI.map(h => h._insurerRut)).size;
   const penetration = totalInsurersInSys > 0 ? (clientList.length / totalInsurersInSys * 100) : 0;
 
-  // Evolución temporal de Ameris AUM
+  // Evolución temporal de Ameris AUM: para cada período p, AUM EFECTIVO a esa
+  // fecha = última foto disponible de cada cía. con _periodo ≤ p. Antes era
+  // estrictamente "posiciones con _periodo === p", lo que subexpresaba al
+  // último punto cuando algunas cías. no habían presentado todavía (genera
+  // discrepancia visible con "Composición por fondo" que usa última foto por
+  // cía.). Con esta lógica el último punto coincide siempre con amerisAUM.
   const periodSeries = allP.map(p => {
-    const cfi = allCFI.filter(h => h._periodo === p);
+    // Última foto de cada cía. con _periodo ≤ p
+    const latestPerCia = new Map();
+    for (const h of allCFI) {
+      if (h._periodo > p) continue;
+      const cur = latestPerCia.get(h._insurerRut);
+      if (!cur || h._periodo > cur) latestPerCia.set(h._insurerRut, h._periodo);
+    }
     let aum = 0;
-    for (const h of cfi) {
+    for (const h of allCFI) {
+      if (h._periodo !== latestPerCia.get(h._insurerRut)) continue;
       if (isAmerisRut(h.rutEmisor) || /ameris/i.test(h.agf || '')) aum += h.valLibro || 0;
     }
     return aum;
