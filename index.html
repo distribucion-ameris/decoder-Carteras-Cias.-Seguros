@@ -2528,6 +2528,15 @@ function fmtRut(rut) {
   return `${withDots}-${dv}`;
 }
 
+// Valida si el identificador parece RUT chileno (dígitos + guión + DV 0-9/K).
+// Útil para distinguir AGFs (RUT chileno) vs emisores extranjeros (ISIN/CUSIP
+// como US90353T1007 para Uber, US5949181045 para Microsoft) que llegan al
+// mismo campo rutEmisor en B.5 acciones internacionales.
+function isChileanRut(s) {
+  if (!s) return false;
+  return /^0*\d{1,9}-[0-9Kk]$/.test(String(s).trim());
+}
+
 // Period (YYYYMM) is normally at byte offset 71. Some compañías submit the NOMBRE
 // field with UTF-8 multi-byte characters (e.g., CN LIFE encodes "Ñ" as 0xC3 0x91 = 2
 // bytes), which shifts everything after it by 1+ bytes. Scan a small window to find
@@ -5962,9 +5971,12 @@ function renderGeneral() {
         .map(f => ({ ...f, cias: f.cias.size }))
         .sort((a, b) => b.valLibro - a.valLibro);
 
+      // Solo marcar "AGF NUEVA" si el identificador es un RUT chileno real.
+      // Acciones extranjeras (Uber, Microsoft, etc.) llegan con ISIN/CUSIP
+      // como rutEmisor (ej. "US90353T1007") y NO son AGFs administradoras.
       const newFundsFromNewAgf = newFunds.filter(f => {
         const aRut = canonicalAgfRut(f.agfRut || '');
-        return aRut && !prevAgfRuts.has(aRut);
+        return aRut && isChileanRut(aRut) && !prevAgfRuts.has(aRut);
       });
 
       const growerRows = fundGrowers.map(f => {
