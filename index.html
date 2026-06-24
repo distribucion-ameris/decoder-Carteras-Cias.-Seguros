@@ -248,15 +248,18 @@
     background: linear-gradient(180deg, #ede9fe 0%, white 100%);
   }
   .dropzone.compact {
-    padding: 14px 20px;
+    padding: 10px 18px;
     text-align: left;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 14px;
-    min-height: 64px;
+    min-height: 0;
   }
+  /* Help-text completo se oculta cuando hay archivos cargados — solo queda
+     el resumen tipo "672 archivos · 4 períodos · B.1:96 B.2:96..." */
+  .dropzone.compact .help-text { display: none; }
   .dropzone.compact .zone-tag {
     margin-bottom: 0;
     margin-right: 4px;
@@ -640,30 +643,38 @@
   /* === Selector múltiple de períodos === */
   .period-multi-wrap { position: relative; }
   .period-multi-trigger {
-    background: white;
-    border: 1px solid var(--c-border);
-    border-radius: var(--r-sm);
-    padding: 6px 14px 6px 10px;
+    background: linear-gradient(135deg, var(--c-ameris-soft) 0%, white 100%);
+    border: 1px solid var(--c-ameris-pale);
+    border-radius: 999px;
+    padding: 7px 26px 7px 14px;
     font-family: inherit;
-    font-size: 13px;
-    color: var(--c-text);
+    font-size: var(--fs-body);
+    color: var(--c-ameris-navy);
+    font-weight: 600;
     cursor: pointer;
-    min-width: 180px;
+    min-width: 200px;
     text-align: left;
-    transition: border-color .12s, background .12s;
+    transition: border-color .12s, background .12s, box-shadow .12s;
     position: relative;
+    box-shadow: var(--shadow-sm);
   }
   .period-multi-trigger::after {
     content: "▾";
     position: absolute;
-    right: 8px;
+    right: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--c-ameris-blue);
     font-size: 11px;
   }
-  .period-multi-trigger:hover { border-color: var(--c-ameris-blue-2); background: #fafbfd; }
-  .period-multi-trigger.has-filter { border-color: var(--c-ameris-blue); background: var(--c-ameris-soft); font-weight: 600; }
+  .period-multi-trigger:hover {
+    border-color: var(--c-ameris-blue);
+    box-shadow: 0 2px 8px rgba(31,68,197,0.12);
+  }
+  .period-multi-trigger.has-filter {
+    border-color: var(--c-ameris-blue);
+    background: linear-gradient(135deg, var(--c-ameris-pale) 0%, white 100%);
+  }
   .period-multi-panel {
     position: absolute;
     top: 100%; left: 0;
@@ -1034,7 +1045,18 @@
     display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; max-height: 110px; overflow-y: auto;
     width: 100%;
   }
-  .dropzone.compact .file-list { margin-top: 8px; max-height: 60px; }
+  .dropzone.compact .file-list {
+    margin-top: 0;
+    max-height: none;
+    flex: 1 1 100%;
+    order: 99;
+  }
+  .dropzone.compact .file-list > div:first-child { margin-bottom: 4px !important; }
+  /* Botones más chicos cuando está compact */
+  .dropzone.compact .dz-actions .btn {
+    padding: 5px 12px;
+    font-size: var(--fs-meta);
+  }
   .file-chip {
     background: white;
     border: 1px solid var(--c-border);
@@ -5422,18 +5444,25 @@ function renderPeriodSelect() {
   const trigger = document.getElementById('period-multi-btn');
   const list = document.getElementById('period-multi-list');
   if (!trigger || !list) return;
-  // Texto del trigger (resumen del filtro actual)
+  // Texto del trigger: muestra el rango efectivo del filtro activo
+  // (ej. "📅 Mar-26" si hay uno solo, "📅 Dic-25 → Mar-26 · 4" si rango).
   const selected = STATE.selectedPeriodsSet;
   const isAll = !selected || selected.size === 0;
+  const visiblePeriods = isAll ? periods : periods.filter(p => selected.has(p));
   if (periods.length === 0) {
-    trigger.textContent = 'Sin períodos cargados';
+    trigger.textContent = '📅 Sin períodos cargados';
     trigger.classList.remove('has-filter');
-  } else if (isAll) {
-    trigger.textContent = `Todos · ${periods.length} períodos`;
-    trigger.classList.remove('has-filter');
-  } else {
-    trigger.textContent = `${selected.size} de ${periods.length} períodos`;
+  } else if (visiblePeriods.length === 0) {
+    trigger.textContent = '📅 Ningún período';
     trigger.classList.add('has-filter');
+  } else if (visiblePeriods.length === 1) {
+    trigger.textContent = `📅 ${fmtPeriod(visiblePeriods[0])}`;
+    trigger.classList.toggle('has-filter', !isAll);
+  } else {
+    const first = fmtPeriod(visiblePeriods[0]);
+    const last = fmtPeriod(visiblePeriods[visiblePeriods.length - 1]);
+    trigger.textContent = `📅 ${first} → ${last} · ${visiblePeriods.length}`;
+    trigger.classList.toggle('has-filter', !isAll);
   }
   // Lista de checkboxes (orden descendente: más reciente arriba)
   list.innerHTML = periods.slice().reverse().map(p => {
@@ -5480,8 +5509,18 @@ function renderFileList() {
   }
   const totalFiles = STATE.files.length;
 
-  // Compactar la zona cuando ya hay archivos cargados — no rob a espacio.
-  if (dz) dz.classList.toggle('compact', totalFiles > 0);
+  // Compactar la zona cuando ya hay archivos cargados — no roba espacio.
+  // En modo compact reemplazamos el texto instructivo "Arrastra una carpeta..."
+  // por un resumen informativo "672 archivos cargados · listo para analizar".
+  if (dz) {
+    dz.classList.toggle('compact', totalFiles > 0);
+    const primary = dz.querySelector('.primary-text');
+    if (primary) {
+      primary.textContent = totalFiles > 0
+        ? `${totalFiles.toLocaleString('es-CL')} archivos cargados`
+        : 'Arrastra una carpeta o archivos CMF';
+    }
+  }
 
   // Resumen con chips por tipo + período cubierto
   if (list) {
@@ -10884,6 +10923,113 @@ function promedioSistemaTopDown() {
   return value;
 }
 
+// Abre la ficha de cía. del Top Down en un modal flotante (mismo patrón que
+// Por compañía aseguradora / Por administradora / Extranjero). Reusa
+// renderTopDownCiaCard como contenido del body. Permite navegación
+// Anterior/Siguiente entre cías. del ranking.
+let TOPDOWN_RANKING_ORDER = [];
+
+function openTopDownCiaModal(rut, rank, sysTotal) {
+  const cart = carteraConsolidadaTopDown(rut);
+  if (!cart) return;
+
+  // Marcar fila activa (no re-renderea la lista)
+  document.querySelectorAll('.topdown-cia-row').forEach(r => {
+    r.classList.toggle('is-active', r.dataset.topdownRut === rut);
+  });
+
+  const idx = TOPDOWN_RANKING_ORDER.indexOf(rut);
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && idx < TOPDOWN_RANKING_ORDER.length - 1;
+  const pct = sysTotal > 0 ? (cart.totalAUM / sysTotal * 100) : 0;
+
+  const html = `
+    <div class="ameris-modal-header">
+      <button class="ameris-modal-nav-btn" id="td-modal-prev" ${hasPrev ? '' : 'disabled'} title="Compañía anterior">⟨ Anterior</button>
+      <div style="min-width:0;overflow:hidden">
+        <div class="ameris-modal-eyebrow">Industria de seguros · ${rank} de ${TOPDOWN_RANKING_ORDER.length}</div>
+        <div class="ameris-modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(cart.name)}</div>
+        <div style="font-size:var(--fs-meta);opacity:0.85;margin-top:2px">RUT ${fmtRut(rut)}${cart.periodo ? ' · ' + fmtPeriod(cart.periodo) : ''} · ${fmtMoneyB(cart.totalAUM)} · ${pct.toFixed(2)}% sistema</div>
+      </div>
+      <button class="ameris-modal-nav-btn" id="td-modal-next" ${hasNext ? '' : 'disabled'} title="Compañía siguiente">Siguiente ⟩</button>
+      <button class="ameris-modal-close" id="td-modal-close" title="Cerrar (ESC) y volver al ranking">Volver</button>
+    </div>
+    <div class="ameris-modal-body" id="topdown-cia-modal-body">
+      ${renderTopDownCiaCard(rut, rank, sysTotal, { isModal: true })}
+    </div>
+  `;
+
+  openModal('topdown-cia-modal', html, {
+    onMount: (overlay) => _wireTopDownCiaModalHandlers(overlay, rut, sysTotal),
+    onClose: () => {
+      TOPDOWN_OPEN_RUT = '';
+      TOPDOWN_INNER_CLASE = '';
+      document.querySelectorAll('.topdown-cia-row.is-active').forEach(r => r.classList.remove('is-active'));
+    },
+  });
+}
+
+function _wireTopDownCiaModalHandlers(overlay, rut, sysTotal) {
+  const closeBtn = overlay.querySelector('#td-modal-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => closeTopModal());
+  const prevBtn = overlay.querySelector('#td-modal-prev');
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    const i = TOPDOWN_RANKING_ORDER.indexOf(rut);
+    if (i > 0) {
+      const newRut = TOPDOWN_RANKING_ORDER[i - 1];
+      TOPDOWN_INNER_CLASE = '';
+      openTopDownCiaModal(newRut, i, sysTotal);
+    }
+  });
+  const nextBtn = overlay.querySelector('#td-modal-next');
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    const i = TOPDOWN_RANKING_ORDER.indexOf(rut);
+    if (i >= 0 && i < TOPDOWN_RANKING_ORDER.length - 1) {
+      const newRut = TOPDOWN_RANKING_ORDER[i + 1];
+      TOPDOWN_INNER_CLASE = '';
+      openTopDownCiaModal(newRut, i + 2, sysTotal);
+    }
+  });
+  // Wirear filas N3 (Renta Fija, CFI, etc.) que abren modal apilado
+  overlay.querySelectorAll('.topdown-n3-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const clase = row.dataset.clase;
+      TOPDOWN_INNER_CLASE = clase;
+      // En vez de re-renderear renderTopDown, abrimos el N3 como modal apilado
+      const ciaRut = row.dataset.rut;
+      const cia = carteraConsolidadaTopDown(ciaRut);
+      const ciaName = cia ? cia.name : `(RUT ${fmtRut(ciaRut)})`;
+      const claseLabelMap = {
+        b1: 'Renta Fija (B.1)', b2: 'CFI y acciones (B.2)', b4: 'Bienes Raíces (B.4)',
+        b5: 'Extranjero (B.5)', b6: 'Otras + Alternativos (B.6)',
+        b7: 'Derivados (B.7)', b8: 'Composición consolidada (B.8)',
+      };
+      const claseLabel = claseLabelMap[clase] || clase.toUpperCase();
+      const n3Html = `
+        <div class="ameris-modal-header">
+          <div></div>
+          <div style="min-width:0;overflow:hidden">
+            <div class="ameris-modal-eyebrow">Drill-down · Nivel 3</div>
+            <div class="ameris-modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(ciaName)} · ${claseLabel}</div>
+          </div>
+          <div></div>
+          <button class="ameris-modal-close" id="td-n3-close" title="Cerrar (ESC) y volver a la ficha de la compañía">Volver</button>
+        </div>
+        <div class="ameris-modal-body">
+          ${renderTopDownN3(ciaRut, clase)}
+        </div>
+      `;
+      openModal('topdown-n3-nested', n3Html, {
+        nested: true,
+        onMount: (ov) => {
+          const cb = ov.querySelector('#td-n3-close');
+          if (cb) cb.addEventListener('click', () => closeTopModal());
+        },
+      });
+    });
+  });
+}
+
 // Render del cuerpo de la ficha de una cía. Igual para inline y vista plena.
 function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   const cart = carteraConsolidadaTopDown(rut);
@@ -10997,8 +11143,11 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
 
   // Modal flotante (overlay full-screen) con el contenido del Nivel 3 de la
   // clase actualmente abierta. Solo aparece si TOPDOWN_INNER_CLASE matchea
-  // una clase del set de listas (b1 por ahora). Click en backdrop o ESC cierra.
+  // una clase del set de listas. Cuando el CiaCard se renderea DENTRO de un
+  // modal (opts.isModal), no inyectamos este overlay legacy — el modal-en-
+  // modal lo maneja _wireTopDownCiaModalHandlers via openModal({nested:true}).
   let innerPanel = '';
+  if (!opts || !opts.isModal) {
   if (TOPDOWN_INNER_CLASE && CLASES_LISTAS.has(TOPDOWN_INNER_CLASE)) {
     const tieneArchivo = cart.archivos.find(a => tipoToClase[a.tipo] === TOPDOWN_INNER_CLASE && a.presente);
     if (tieneArchivo) {
@@ -11029,6 +11178,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
         </div>
       `;
     }
+  }
   }
 
   return `
@@ -11264,29 +11414,23 @@ function renderTopDown() {
         (c.name || '').toLowerCase().includes(q) ||
         (c.rut || '').toLowerCase().includes(q))
     : insurerRanking;
+  TOPDOWN_RANKING_ORDER = filteredRanking.map(c => c.rut);
   const rankingRows = filteredRanking.map((c) => {
     // Rank real respecto al ranking completo (no al filtrado) — así al
     // buscar "Penta" sigue mostrando que es #1 en el sistema.
     const realRank = insurerRanking.findIndex(x => x.rut === c.rut) + 1;
     const pct = sysTotal > 0 ? (c.total / sysTotal * 100) : 0;
-    const isOpen = c.rut === TOPDOWN_OPEN_RUT;
-    const chevron = isOpen ? '▼' : '▶';
-    const chevronColor = isOpen ? 'var(--c-ameris-blue)' : 'var(--c-muted)';
-    const rowBg = isOpen ? 'background:#f0f9ff' : '';
     return `
-      <tr class="topdown-cia-row" data-topdown-rut="${escapeHtml(c.rut)}" style="cursor:pointer;${rowBg}">
+      <tr class="topdown-cia-row" data-topdown-rut="${escapeHtml(c.rut)}" style="cursor:pointer">
         <td class="num">${realRank}</td>
         <td>
           <strong>${escapeHtml(c.name)}</strong>
-          <span style="color:${chevronColor};margin-left:6px;font-size:var(--fs-meta)">${chevron}</span>
+          <span style="color:var(--c-muted);margin-left:6px;font-size:var(--fs-meta)">›</span>
           <div style="color:var(--c-muted);font-size:var(--fs-meta);margin-top:2px">RUT ${fmtRut(c.rut)} · ${fmtPeriod(c.periodo)}</div>
         </td>
         <td class="num">${fmtMoneyB(c.total)}</td>
         <td class="num">${pct.toFixed(2)}%</td>
       </tr>
-      ${isOpen ? `<tr><td colspan="4" style="background:#f8fafc;padding:0">
-        <div style="padding:14px">${renderTopDownCiaCard(c.rut, realRank, sysTotal)}</div>
-      </td></tr>` : ''}
     `;
   }).join('');
 
@@ -11338,14 +11482,14 @@ function renderTopDown() {
   setTimeout(() => {
     container.querySelectorAll('.topdown-cia-row').forEach(row => {
       row.addEventListener('click', (e) => {
-        // No expandir si el click vino de un botón dentro de la ficha
         if (e.target.closest('button')) return;
         const rut = row.dataset.topdownRut;
-        const wasOpen = TOPDOWN_OPEN_RUT === rut;
-        TOPDOWN_OPEN_RUT = wasOpen ? '' : rut;
-        // Si cambiamos a otra cía o cerramos la ficha, cerrar sub-panel N3
-        if (!wasOpen) TOPDOWN_INNER_CLASE = '';
-        renderTopDown();
+        const realRank = insurerRanking.findIndex(x => x.rut === rut) + 1;
+        // Click abre modal flotante con la ficha de la cía. (espejo del
+        // patrón de Por compañía / Por administradora / Extranjero).
+        TOPDOWN_OPEN_RUT = rut;
+        TOPDOWN_INNER_CLASE = '';
+        openTopDownCiaModal(rut, realRank, sysTotal);
       });
     });
     container.querySelectorAll('[data-topdown-expand]').forEach(btn => {
