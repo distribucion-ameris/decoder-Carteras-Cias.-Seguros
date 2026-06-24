@@ -1481,21 +1481,27 @@
   .ameris-modal-nav-btn:hover { background: rgba(255,255,255,0.28); }
   .ameris-modal-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .ameris-modal-close {
-    background: rgba(255,255,255,0.18);
-    border: none;
+    background: rgba(255,255,255,0.22);
+    border: 1px solid rgba(255,255,255,0.28);
     color: white;
     border-radius: 6px;
-    width: 34px;
-    height: 34px;
-    font-size: 18px;
+    padding: 7px 14px;
+    font-size: var(--fs-meta);
     font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: 6px;
     transition: background 0.15s;
+    font-family: inherit;
+    white-space: nowrap;
   }
-  .ameris-modal-close:hover { background: rgba(255,255,255,0.32); }
+  .ameris-modal-close:hover { background: rgba(255,255,255,0.38); }
+  .ameris-modal-close::before {
+    content: '✕';
+    font-size: 14px;
+    font-weight: 700;
+  }
   .ameris-modal-body {
     flex: 1;
     overflow-y: auto;
@@ -6488,7 +6494,7 @@ function openAGFModal(rut) {
         <div style="font-size:var(--fs-meta);opacity:0.85;margin-top:2px">RUT ${fmtRut(rut)} · ${fmtMoney(agf.valLibro)} · ${pct.toFixed(2)}% sistema · ${agf.fundsCount} fondos · ${agf.insurersCount} clientes</div>
       </div>
       <button class="ameris-modal-nav-btn" id="agf-modal-next" ${hasNext ? '' : 'disabled'} title="Administradora siguiente">Siguiente ⟩</button>
-      <button class="ameris-modal-close" id="agf-modal-close" title="Cerrar (ESC)">✕</button>
+      <button class="ameris-modal-close" id="agf-modal-close" title="Cerrar (ESC) y volver al listado de administradoras">Volver</button>
     </div>
     <div class="ameris-modal-body" id="agf-modal-body">
       ${renderAGFCardBody(rut, hs)}
@@ -6990,7 +6996,7 @@ function openInsurerModal(rut) {
         <div style="font-size:var(--fs-meta);opacity:0.85;margin-top:2px">RUT ${fmtRut(ins.rut)} · ${fmtPeriod(ins.periodo)} · ${fmtMoney(ins.valLibro)} · ${pct.toFixed(2)}% sistema</div>
       </div>
       <button class="ameris-modal-nav-btn" id="ins-modal-next" ${hasNext ? '' : 'disabled'} title="Compañía siguiente">Siguiente ⟩</button>
-      <button class="ameris-modal-close" id="ins-modal-close" title="Cerrar (ESC)">✕</button>
+      <button class="ameris-modal-close" id="ins-modal-close" title="Cerrar (ESC) y volver al listado de compañías">Volver</button>
     </div>
     <div class="ameris-modal-body" id="insurer-modal-body">
       ${renderInsurerCardBody(rut)}
@@ -8237,7 +8243,7 @@ function openExtranjeroModal(rut) {
         <div style="font-size:var(--fs-meta);opacity:0.85;margin-top:2px">RUT ${fmtRut(rut)} · ${fmtPeriod(lastP)} · ${fmtMoney(totAll)} · ${lastRecs.length} posiciones</div>
       </div>
       <button class="ameris-modal-nav-btn" id="ext-modal-next" ${hasNext ? '' : 'disabled'} title="Compañía siguiente">Siguiente ⟩</button>
-      <button class="ameris-modal-close" id="ext-modal-close" title="Cerrar (ESC)">✕</button>
+      <button class="ameris-modal-close" id="ext-modal-close" title="Cerrar (ESC) y volver al listado de compañías">Volver</button>
     </div>
     <div class="ameris-modal-body" id="extranjero-modal-body">
       ${renderExtranjeroDetailHTML(rut, records)}
@@ -8397,7 +8403,7 @@ function renderExtranjeroDetailHTML(rut, records) {
         </div>
       </div>
 
-      <details ${deuda.length > 0 ? 'open' : ''} style="margin-top:14px">
+      <details style="margin-top:14px">
         <summary>
           <strong>Deuda extranjera (${deuda.length} bonos · ${fmtMoney(totDeuda)})</strong>
         </summary>
@@ -8418,7 +8424,7 @@ function renderExtranjeroDetailHTML(rut, records) {
         </div>
       </details>
 
-      <details ${cuotas.length > 0 ? 'open' : ''} style="margin-top:14px">
+      <details style="margin-top:14px">
         <summary>
           <strong>Cuotas y acciones extranjeras (${cuotas.length} posiciones · ${fmtMoney(totCuotas)})</strong>
         </summary>
@@ -10619,7 +10625,7 @@ function renderTopDownN3_Consolidada(rut, ciaName) {
       `;
     }).join('');
     return `
-      <details ${fam.total / totVf >= 0.15 ? 'open' : ''} style="margin-bottom:6px">
+      <details style="margin-bottom:6px">
         <summary style="cursor:pointer;padding:10px 14px;background:${color}15;border-left:3px solid ${color};border-radius:3px;font-size:var(--fs-body)">
           <strong style="color:${color}">${escapeHtml(fam.fam)}</strong>
           <span style="color:var(--c-muted);margin-left:10px">${fmtMoney(fam.total)} · ${totVf > 0 ? (fam.total / totVf * 100).toFixed(1) : '0'}% · ${tipos.length} tipo${tipos.length !== 1 ? 's' : ''}</span>
