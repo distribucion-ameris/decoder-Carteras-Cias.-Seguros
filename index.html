@@ -9038,6 +9038,8 @@ function renderTopDownN3(rut, clase) {
     if (clase === 'b6') return renderTopDownN3_OtrasAlt(rut, ciaName);
     if (clase === 'b7') return renderTopDownN3_Derivados(rut, ciaName);
     if (clase === 'b8') return renderTopDownN3_Consolidada(rut, ciaName);
+    // Fallback (no debería ocurrir: todas las clases b1-b8 tienen renderer)
+    return `<div style="padding:24px;color:var(--c-muted)">Clase no reconocida: ${escapeHtml(clase)}</div>`;
   } catch (err) {
     console.error('renderTopDownN3 error:', clase, err);
     return `
@@ -9047,18 +9049,6 @@ function renderTopDownN3(rut, clase) {
       </div>
     `;
   }
-
-  // Placeholder para clases futuras
-  const claseLabels = {};
-  return `
-    <div style="padding:24px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:6px">
-      <h3 style="margin:0 0 8px;color:#92400e">🚧 Nivel 3 · ${escapeHtml(claseLabels[clase] || clase)} — en construcción</h3>
-      <div style="font-size:var(--fs-body);color:#78350f">
-        El drill-down para esta clase de activo viene en el próximo bloque.
-        Por ahora podés volver a la ficha de la cía. para ver el agregado y otras clases.
-      </div>
-    </div>
-  `;
 }
 
 // Nivel 3 · Renta Fija (B.1). Toma el último B.1 cargado de la cía. y muestra
@@ -11099,8 +11089,7 @@ function renderTopDownCiaCard(rut, rank, sysAUM, opts) {
   })();
 
   // Mapeo Tipo (B.1/B.2/...) → clase (b1/b2/...) para el state del Nivel 3.
-  // B.1 (Renta Fija) ya tiene drill-down implementado. El resto está en
-  // construcción — mostramos un indicador visual claro de ambos estados.
+  // Todas las clases (b1-b8) tienen drill-down implementado.
   const tipoToClase = { 'B.1':'b1', 'B.2':'b2', 'B.4':'b4', 'B.5':'b5', 'B.6':'b6', 'B.7':'b7', 'B.8':'b8' };
   const CLASES_LISTAS = new Set(['b1', 'b2', 'b4', 'b5', 'b6', 'b7', 'b8']);
   const archivoRows = cart.archivos.map(a => {
