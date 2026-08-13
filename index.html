@@ -4035,7 +4035,11 @@ let STATE = {
   selectedPeriod: '', // legacy single-period filter (mantenido por compat)
   selectedPeriodsSet: new Set(),  // multi-select: si vacío → todos; si tiene valores → solo esos
   agfFilter: '',      // '' | 'ameris' | 'rut:RUT_EMISOR'
-  carryForward: true, // arrastrar la última cartera conocida de una cía. que no reportó
+  // Arrastre de cartera: siempre activo, sin interruptor en la UI. Una cía. que
+  // no reportó un período se muestra con su última cartera conocida en vez de
+  // contarse como salida. Para inspeccionar los datos crudos en una sesión de
+  // debug: STATE.carryForward = false; renderAll();
+  carryForward: true,
 };
 
 // Look up a friendly name for a CMF nemotécnico.
@@ -4975,25 +4979,6 @@ function carriedHoldings(periods, agfF, onlyRut) {
   return out;
 }
 
-// Compañías que dejaron de reportar de forma permanente mientras su grupo
-// seguía completo — candidatas a fusión/liquidación. No se arrastran, y se
-// listan para que el usuario pueda confirmarlas.
-function realExitsDetected(periods) {
-  if (!periods || periods.length === 0) return [];
-  const { universe, lastEver, exitKeys } = coverageIndex();
-  const out = new Map();
-  for (const k of exitKeys) {
-    const lp = lastEver.get(k);
-    if (!lp || lp > periods[periods.length - 1]) continue;
-    const src = (universe.get(lp) || new Map()).get(k);
-    if (!src) continue;
-    if (!out.has(src.insurerRut)) {
-      out.set(src.insurerRut, { rut: src.insurerRut, nombre: src.insurerName, desde: lp });
-    }
-  }
-  return Array.from(out.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
-}
-
 function activeHoldings(ignoreFilters = false) {
   const agfF = ignoreFilters ? '' : STATE.agfFilter;
   const onlyRut = agfF.startsWith('rut:') ? agfF.slice(4) : null;
@@ -5008,24 +4993,6 @@ function activeHoldings(ignoreFilters = false) {
   const periods = ignoreFilters ? allPeriods() : activePeriods();
   for (const h of carriedHoldings(periods, agfF, onlyRut)) out.push(h);
   return out;
-}
-
-// Cobertura por período: qué mitades (Vida / Generales) están cargadas y con
-// cuántas compañías, comparado contra el mejor mes de cada grupo. Es lo que
-// alimenta el aviso de datos incompletos.
-function dataCoverageReport(periods) {
-  const { byGroup, max } = coverageIndex();
-  const rows = (periods || []).map(p => {
-    const e = byGroup.get(p) || { v: new Set(), g: new Set(), x: new Set() };
-    return {
-      periodo: p, v: e.v.size, g: e.g.size, sinGrupo: e.x.size,
-      faltaV: max.v > 0 && e.v.size === 0,
-      faltaG: max.g > 0 && e.g.size === 0,
-      parcialV: max.v > 0 && e.v.size > 0 && e.v.size < max.v * 0.8,
-      parcialG: max.g > 0 && e.g.size > 0 && e.g.size < max.g * 0.8,
-    };
-  });
-  return { rows, max };
 }
 
 // All B.5 records (deuda + cuotas) across active files, with insurer metadata.
@@ -5859,59 +5826,8 @@ function renderGeneral() {
     },
   };
 
-  // Aviso de cobertura: mitades faltantes (Vida/Generales) y meses parciales.
-  // Se muestra solo si hay algo que advertir — si los datos están completos no
-  // ocupa espacio.
-  const cov = dataCoverageReport(periodsLoaded);
-  const covMalos = cov.rows.filter(r => r.faltaV || r.faltaG || r.parcialV || r.parcialG);
-  const nCarried = hs.filter(h => h._carried).length;
-  const ciasCarried = new Set(hs.filter(h => h._carried).map(h => h._insurerRut)).size;
-  const salidas = realExitsDetected(periodsLoaded);
-
-  const covDetalle = covMalos.map(r => {
-    const partes = [];
-    if (r.faltaV) partes.push('falta <b>Vida</b> completo');
-    else if (r.parcialV) partes.push(`<b>Vida</b> parcial (${r.v} de ${cov.max.v} cías.)`);
-    if (r.faltaG) partes.push('falta <b>Generales</b> completo');
-    else if (r.parcialG) partes.push(`<b>Generales</b> parcial (${r.g} de ${cov.max.g} cías.)`);
-    return `<li><b>${fmtPeriod(r.periodo)}</b> — ${partes.join(' · ')}</li>`;
-  }).join('');
-
-  const coverageBanner = covMalos.length === 0 ? '' : `
-    <div class="card" style="margin-bottom:16px">
-      <div style="font-weight:600;margin-bottom:6px">
-        Cobertura de datos · ${covMalos.length} período${covMalos.length !== 1 ? 's' : ''} incompleto${covMalos.length !== 1 ? 's' : ''}
-      </div>
-      <p style="color:var(--c-muted);font-size:var(--fs-meta);margin:0 0 8px">
-        La CMF publica dos grupos disjuntos de compañías: <b>Vida</b> (Segundo Grupo, archivos <code>…v.RUT</code>)
-        y <b>Generales</b> (Primer Grupo, <code>…g.RUT</code>). Un mes completo de la industria es la
-        <b>suma de ambos</b>. En CFI, Vida pesa ~40x lo de Generales, así que un mes al que le falte
-        la mitad Vida se ve como un derrumbe del AUM que no ocurrió.
-      </p>
-      <ul style="color:var(--c-muted);font-size:var(--fs-meta);margin:0 0 8px;padding-left:20px">${covDetalle}</ul>
-      <div style="border-top:1px solid var(--c-border);padding-top:8px;font-size:var(--fs-meta);color:var(--c-muted)">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="carry-forward-toggle" ${STATE.carryForward ? 'checked' : ''}>
-          <span>
-            <b>Arrastrar última cartera conocida</b> de las compañías que no reportaron
-            ${STATE.carryForward && nCarried > 0
-              ? `— activo: <b>${nCarried}</b> posiciones de <b>${ciasCarried}</b> cías. se muestran con su último valor disponible`
-              : STATE.carryForward ? '— activo, sin posiciones que arrastrar' : '— desactivado: los meses sin archivo se ven como salida total'}
-          </span>
-        </label>
-      </div>
-      ${salidas.length === 0 ? '' : `
-      <div style="border-top:1px solid var(--c-border);padding-top:8px;margin-top:8px;font-size:var(--fs-meta);color:var(--c-muted)">
-        <b>Salida real (no se arrastra):</b> ${salidas.map(s => `${s.nombre} <span style="opacity:.75">(último dato ${fmtPeriod(s.desde)})</span>`).join(' · ')}.
-        Dejaron de reportar de forma permanente mientras el resto de su grupo seguía completo — típicamente fusión o liquidación,
-        con la cartera absorbida por otra compañía. Arrastrarlas duplicaría ese monto.
-      </div>`}
-    </div>
-  `;
-
   // KPI cards — todo computado desde los archivos cargados (CLP)
   const kpis = `
-    ${coverageBanner}
     <div class="kpi-grid">
       <div class="kpi accent kpi-clickable" data-kpi="aum">
         <div class="kpi-info-icon" title="Click para ver explicación">?</div>
@@ -6396,15 +6312,6 @@ function renderGeneral() {
     ${macroSections}
     ${top15AgfsBlock}
   `;
-
-  // Interruptor del arrastre de cartera (aviso de cobertura)
-  const cfToggle = container.querySelector('#carry-forward-toggle');
-  if (cfToggle) {
-    cfToggle.addEventListener('change', (e) => {
-      STATE.carryForward = e.target.checked;
-      renderAll();
-    });
-  }
 
   // Wire click handlers de los KPIs clickeables → abrir modal con explicación
   container.querySelectorAll('.kpi-clickable').forEach(el => {
